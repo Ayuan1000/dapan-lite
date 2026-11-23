@@ -37,11 +37,22 @@ async function applyTushareRisk(snap) {
     tushare('namechange', { ts_code: ts }, 'ts_code,name').catch(() => []),
     tushare('fina_indicator', { ts_code: ts }, 'ts_code,end_date,netprofit').catch(() => [])
   ]);
+  // 只认本次入池标的的数据；Tushare 有时忽略 ts_code 返回全局前 100 条
+  const wanted = new Set(ts.split(','));
+  const f2 = fc.filter(r => wanted.has(r.ts_code));
+  const n2 = nc.filter(r => wanted.has(r.ts_code));
+  const i2 = fi.filter(r => wanted.has(r.ts_code));
+  // 三项全空说明 token 无效/无权限，不能当成「风控已通过」
+  if (!f2.length && !n2.length && !i2.length) throw new Error('Tushare 三项接口均无本池标的数据，风控未生效');
+  const partial = [];
+  if (!f2.length) partial.push('forecast');
+  if (!n2.length) partial.push('namechange');
+  if (!i2.length) partial.push('fina');
   const bad = {};
-  fc.forEach(r => { if (/亏|减|预警/.test(String(r.type || ''))) bad[r.ts_code] = '业绩预告负面'; });
-  nc.forEach(r => { if (/ST/.test(String(r.name || '').toUpperCase())) bad[r.ts_code] = '曾用名含 ST'; });
+  f2.forEach(r => { if (/亏|减|预警/.test(String(r.type || ''))) bad[r.ts_code] = '业绩预告负面'; });
+  n2.forEach(r => { if (/ST/.test(String(r.name || '').toUpperCase())) bad[r.ts_code] = '曾用名含 ST'; });
   const byCode = {};
-  fi.forEach(r => { (byCode[r.ts_code] || (byCode[r.ts_code] = [])).push(r); });
+  i2.forEach(r => { (byCode[r.ts_code] || (byCode[r.ts_code] = [])).push(r); });
   Object.keys(byCode).forEach(k => {
     const arr = byCode[k].sort((a, b) => String(b.end_date).localeCompare(String(a.end_date))).slice(0, 2);
     if (arr.length === 2 && arr.every(r => +(r.netprofit || 0) < 0)) bad[k] = '最近两期连续亏损';
@@ -50,7 +61,9 @@ async function applyTushareRisk(snap) {
   snap.cand = (snap.cand || []).filter(keep);
   snap.watch = (snap.watch || []).filter(keep);
   snap.tushareRisk = bad;
+  snap.tushareRows = { forecast: f2.length, namechange: n2.length, fina: i2.length };
   snap.warnings = (snap.warnings || []).filter(w => w !== 'tushare_risk_not_loaded');
+  if (partial.length) snap.warnings.push('tushare_risk_partial_' + partial.join('+'));
 }
 
 /* 数据中心出口（Actions runner 在海外）抓东财板块榜会偶发全线失败，
@@ -93,8 +106,12 @@ async function applyTushareRisk(snap) {
   if (process.env.TUSHARE_TOKEN) {
     try {
       await applyTushareRisk(best);
-      console.log('Tushare 风控已应用，剔除', Object.keys(best.tushareRisk || {}).length, '只');
-    } catch (e) { console.log('Tushare 风控不可用（保留原结果）:', e && e.message); }
+      console.log('Tushare 风控已应用', JSON.stringify(best.tushareRows || {}),
+        '剔除', Object.keys(best.tushareRisk || {}).length, '只');
+    } catch (e) {
+      console.log('Tushare 风控不可用（保留原结果）:', e && e.message);
+      best.warnings = (best.warnings || []).concat('tushare_risk_not_loaded');
+    }
   }
 
   const all = [...(best.cand || []), ...(best.watch || [])];
