@@ -3,6 +3,12 @@ name: Deploy GitHub Pages
 on:
   push:
     branches: [main]
+  # 每交易日 17:45 (Asia/Shanghai = 09:45 UTC) 重新生成快照并部署。
+  # 用「生成 → artifact 部署」代替「生成 → commit 回仓库」：
+  # GitHub 新仓库默认 GITHUB_TOKEN 只读，commit+push 会 403；
+  # 而 pages: write + id-token 足以把新快照直接发布上线，无需写仓库权限。
+  schedule:
+    - cron: '45 9 * * 1-5'
   workflow_dispatch:
 
 permissions:
@@ -22,6 +28,17 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      # lib/core.js 只用 Node 内置 fetch，无需 npm install。
+      # 失败不阻断部署：退回仓库里的旧快照，页面仍可用（前端有过期校验与实时兜底）。
+      - name: Generate snapshot
+        continue-on-error: true
+        run: node scripts/gen-snapshot.js
+
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
