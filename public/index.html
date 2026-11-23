@@ -106,6 +106,8 @@ header{position:sticky;top:0;z-index:50;background:linear-gradient(180deg,rgba(1
 .pool-h .cnt .tgt{color:var(--green);font-weight:800}
 .pool-h .cnt .obs{color:var(--blue);font-weight:800}
 .pre-gate .gen{margin-left:auto;color:var(--tx3);font-size:9.5px;flex:none}
+.pre-main{padding:4px 12px;font-size:10px;color:var(--tx2);border-bottom:1px solid rgba(255,255,255,.05)}
+.pre-main b{color:var(--blue)}
 /* 漏斗 */
 .pf{padding:9px 12px 6px}
 .pf-row{display:grid;grid-template-columns:1fr 56px;column-gap:8px;row-gap:2px;align-items:center;padding:2px 0}
@@ -716,6 +718,8 @@ function chip(k,v,c){return'<div class="chip"><div class="k">'+k+'</div><div cla
 const PRE_CUT=1060;   // 17:40 = 17*60+40
 const PRE_KEEP=3;     // 名单主展示数量
 function prePrevWd(d){const x=new Date(d);do{x.setDate(x.getDate()-1);}while(!isWd(dstr(x)));return x;}
+function prePrevWdN(d,n){const x=new Date(+String(d).slice(0,4),+String(d).slice(4,6)-1,+String(d).slice(6,8));
+  let c=0;while(c<n){x.setDate(x.getDate()-1);if(isWd(dstr(x)))c++;}return dstr(x);}
 function preTarget(nowIn){ // 基准交易日：过了今日17:40取今日，否则上一工作日
   const now=nowIn?new Date(nowIn):new Date();
   const m=now.getHours()*60+now.getMinutes(),t=dstr(now);
@@ -729,12 +733,72 @@ function preMainBoard(x){ // 主板 + 非ST + 非退市 + 非新股
   if(/^(N|C)/.test(n))return false;
   return true;
 }
+/* ---- 主线判定（与 lib/core.js pickMainline 同口径）----
+   ①同概念/同行业连续2~3天≥5只 ②≥3板空间板且抗分歧(回封或连板延续)
+   ③成交额持续放大 ④龙头/跟风/补涨梯队 ⑤催化需人工确认。 */
+const MAIN_ALIAS={
+  '机器人':['机器人','人形','减速器','丝杠','伺服','灵巧手','执行器','工业自动化','智能装备','传感器','机器视觉'],
+  '人工智能':['人工智能','AI','算力','CPO','光模块','大模型','数据要素','AIGC'],
+  '芯片':['芯片','半导体','光刻','存储','封测','先进制程','第三代半导体'],
+  '新能源车':['新能源车','汽车','锂电','固态电池','充电桩','智能驾驶','汽车零部件'],
+  '光伏':['光伏','硅料','组件','逆变器','钙钛矿'],
+  '军工':['军工','航天','航空','船舶','导弹'],
+  '医药':['医药','创新药','中药','医疗','CXO','减肥药']
+};
+function themeKeywords(name){
+  const s=String(name||''),hit=Object.keys(MAIN_ALIAS).filter(k=>s.toUpperCase().includes(k.toUpperCase()));
+  if(hit.length)return[...new Set(hit.flatMap(k=>MAIN_ALIAS[k]))];
+  return[s.replace(/(概念|板块|行业|相关|题材)$/,'')].filter(Boolean);
+}
+function prePickMainline(themes,pools){
+  pools=(pools||[]).filter(p=>p&&p.length);
+  const sets=pools.map(p=>new Set(p.map(x=>x.code||x.c)));
+  const amtMaps=pools.map(p=>new Map(p.map(x=>[x.code||x.c,+(x.amt||x.amount)||0])));
+  const ind=pools.map(p=>{const m={};p.forEach(x=>{const k=x.hybk||'';if(!k)return;
+    if(!m[k])m[k]={n:0,amt:0};m[k].n++;m[k].amt+=+(x.amt||x.amount)||0;});return m;});
+  const raw=(themes||[]).map(t=>{
+    const zs=t.zt||[],codes=zs.map(z=>z.code),d0=codes.length;
+    const hitN=i=>sets[i]?codes.filter(c=>sets[i].has(c)).length:0;
+    const hitA=i=>amtMaps[i]?codes.reduce((s,c)=>s+(amtMaps[i].get(c)||0),0):0;
+    let n1=hitN(0),n2=hitN(1),a1=hitA(0),a2=hitA(1);
+    if(t.kind==='行业'){
+      const q1=ind[0][t.name]||{n:0,amt:0},q2=ind[1][t.name]||{n:0,amt:0};
+      n1=Math.max(n1,q1.n);n2=Math.max(n2,q2.n);a1=Math.max(a1,q1.amt);a2=Math.max(a2,q2.amt);
+    }
+    const cont=d0>=5&&(n1>=5||(n2>=5&&n1>=4));
+    const hi=zs.filter(z=>(z.boards||z.lbc||1)>=3);
+    const anti=hi.some(z=>(z.zbc||0)>0||!!(sets[0]&&sets[0].has(z.code))||!!(sets[1]&&sets[1].has(z.code)));
+    const ladder=hi.length>0&&zs.some(z=>(z.boards||z.lbc||1)===2)&&zs.some(z=>(z.boards||z.lbc||1)===1);
+    const amt0=zs.reduce((s,z)=>s+(+z.amount||0),0);
+    const volUp=amt0>0&&a1>0&&amt0>a1*1.05&&a1>=a2*0.8;
+    let sc=0;
+    if(cont)sc+=35;else if(d0>=5&&n1>=3)sc+=12;
+    if(hi.length&&anti)sc+=25;
+    if(ladder)sc+=15;
+    if(volUp)sc+=15;
+    sc+=Math.min(d0,12)*2;
+    const maxLbc=zs.reduce((m,z)=>Math.max(m,z.boards||z.lbc||1),t.maxLbc||0);
+    return{...t,d0,d1:n1,d2:n2,cont,anti,ladder,volUp,mainScore:Math.round(sc),maxLbc};
+  });
+  const scored=raw.filter(t=>t.cont&&(t.maxLbc||0)>=3&&t.anti)
+    .sort((a,b)=>b.mainScore-a.mainScore||b.d0-a.d0);
+  const mainline=scored[0]||null;
+  const scopeNames=new Set();
+  if(mainline){
+    const kws=themeKeywords(mainline.name);
+    kws.forEach(k=>scopeNames.add(k));
+    (themes||[]).forEach(t=>{if(themeKeywords(t.name).some(k=>kws.some(m=>k.toUpperCase().includes(m.toUpperCase())||m.toUpperCase().includes(k.toUpperCase()))))scopeNames.add(t.name);});
+    (mainline.zt||[]).forEach(z=>{if(z.hybk)scopeNames.add(z.hybk);});
+  }
+  const scopeHit=name=>!!name&&[...scopeNames].some(k=>String(name).toUpperCase().includes(k.toUpperCase()));
+  return{mainline,raw,scopeHit,scopeNames:[...scopeNames],partial:pools.length<2};
+}
 function preSyncThemes(zt){ // 兜底：题材接口不可用时，用行业(hybk)自聚合成"题材"
   const m={};
   zt.forEach(x=>{
     const k=x.hybk||'未知';
     if(!m[k])m[k]={name:k,kind:'行业',zt:[],ztCount:0,maxLbc:0,fundSum:0,sumLbc:0,pct:0,inflow:0};
-    const t=m[k];t.zt.push({code:x.code,name:x.name,lbc:x.boards||1,fund:x.fund||0,fbt:x.fbt||0,zbc:x.zbc||0,hybk:x.hybk||''});
+    const t=m[k];t.zt.push({code:x.code,name:x.name,lbc:x.boards||1,fund:x.fund||0,fbt:x.fbt||0,zbc:x.zbc||0,hybk:x.hybk||'',amount:x.amt||0});
     t.ztCount++;t.fundSum+=x.fund||0;t.sumLbc+=x.boards||1;
     if((x.boards||1)>t.maxLbc)t.maxLbc=x.boards||1;
   });
@@ -894,21 +958,23 @@ async function preKline(x,date){
   }catch(e){return null;}
 }
 
-function preCompute(zt,themes){ // 五级漏斗：范围 → 高度 → 一致性 → 主板
+function preCompute(zt,themes,prev){ // 五级漏斗：主线 → 高度 → 一致性 → 主板
   const L0=zt.length;
   const all=(themes||[]).filter(t=>(t.ztCount||0)>=2).sort((a,b)=>(b.ztCount-a.ztCount)||(b.score-a.score));
-
-  /* 主线强度判定：区分"成型主线"与"萌芽/混沌期"
-     成型：题材涨停≥max(4, 12%全市场)  或  有≥3板高标且题材≥3家
-     混沌：以上都不满足（新主线尚未成型）→ 不做题材硬过滤，改为全市场纯强度选龙 */
-  const thFloor=Math.max(4,Math.ceil(L0*0.12));
-  const strong=all.filter(t=>(t.ztCount||0)>=thFloor||((t.maxLbc||0)>=3&&(t.ztCount||0)>=3));
-  const hasMain=strong.length>0;
-  const topTh=(hasMain?strong:all).slice(0,3);
-  const mainName=topTh.length?topTh[0].name:'';
-
-  // L1：成型主线 → 只保留主线内；混沌期 → 全市场（保留强度最高的几个题材作标签）
-  const L1=hasMain?zt.filter(x=>!!preThemeOf(x,topTh)):zt.slice();
+  const ml=prePickMainline(themes,prev);
+  const mainline=ml.mainline,hasMain=!!mainline;
+  const topTh=mainline?[mainline]:[];
+  const mainName=mainline?mainline.name:'';
+  /* 严格主线内：概念成员 / 所属行业 / 关键词族任一命中即可，
+     覆盖「概念或主营业务是主线范围内都算」。无主线 → 两池皆空。 */
+  const inMainOf=x=>{
+    if(!mainline)return false;
+    if((mainline.zt||[]).some(z=>z.code===x.code))return true;
+    if(ml.scopeHit(x.hybk))return true;
+    for(const t of (themes||[])){if(ml.scopeHit(t.name)&&(t.zt||[]).some(z=>z.code===x.code))return true;}
+    return false;
+  };
+  const L1=hasMain?zt.filter(inMainOf):[];
   const L2=L1.filter(x=>(x.boards||0)>=2);
   // L3：一致性 —— 无炸板记录（未首次分歧）
   const L3=L2.filter(x=>!x.zbc||x.zbc<=0);
@@ -916,12 +982,15 @@ function preCompute(zt,themes){ // 五级漏斗：范围 → 高度 → 一致�
   // 归属标签用【全量】题材（含只有1家的行业），避免"题材未归属"
   const allForTag=all.slice();
   const tagOf=x=>preThemeOf(x,topTh)||preThemeOf(x,allForTag)||{name:x.hybk||'其他',kind:'行业',ztCount:1,maxLbc:x.boards||1};
-  const cand=L4.map(x=>{const th=tagOf(x);const bs=preScore(x,th,hasMain&&!!preThemeOf(x,topTh));return{...x,th,sc:bs,baseSc:bs,inMain:hasMain&&!!preThemeOf(x,topTh)};})
+  const cand=L4.map(x=>{const th=tagOf(x);const bs=preScore(x,th,inMainOf(x));return{...x,th,sc:bs,baseSc:bs,inMain:inMainOf(x)};})
     .sort((a,b)=>b.sc-a.sc||b.boards-a.boards||a.fbt-b.fbt);
-  // 降级观察名单：连板≥2 + 主板非ST，按强度排（给"今日0只达标"时兜底展示最强）
-  const watch=L2.filter(preMainBoard).map(x=>{const th=tagOf(x);const bs=preScore(x,th,hasMain&&!!preThemeOf(x,topTh));return{...x,th,sc:bs,baseSc:bs,inMain:hasMain&&!!preThemeOf(x,topTh)};})
+  // 降级观察名单：主线内连板≥2 + 主板非ST，按强度排
+  const watch=L2.filter(preMainBoard).map(x=>{const th=tagOf(x);const bs=preScore(x,th,inMainOf(x));return{...x,th,sc:bs,baseSc:bs,inMain:inMainOf(x)};})
     .sort((a,b)=>b.sc-a.sc||b.boards-a.boards||a.fbt-b.fbt).slice(0,5);
-  return{L0,L1:L1.length,L2:L2.length,L3:L3.length,L4:L4.length,topTh,all,cand,watch,hasMain,mainName};
+  return{L0,L1:L1.length,L2:L2.length,L3:L3.length,L4:L4.length,topTh,all,cand,watch,hasMain,mainName,
+    mainline:mainline?{name:mainline.name,kind:mainline.kind,d0:mainline.d0,d1:mainline.d1,d2:mainline.d2,
+      maxLbc:mainline.maxLbc,anti:mainline.anti,ladder:mainline.ladder,volUp:mainline.volUp,
+      mainScore:mainline.mainScore,scope:ml.scopeNames,catalyst:'需人工确认（政策/业绩/事件）'}:null};
 }
 
 function dateOf(r){return (r&&r.date)||today;}
@@ -1024,7 +1093,10 @@ async function loadPre(force){
     themes=preSyncThemes(zt);
   }
 
-  const res=preCompute(zt,themes);
+  // 主线判定需要前两个交易日涨停池；失败就标数据不足，不放宽成全市场
+  const prev=await Promise.all([1,2].map(n=>
+    emPool('ZT',prePrevWdN(date,n)).then(z=>(z.pool||[]).map(normStock)).catch(()=>[])));
+  const res=preCompute(zt,themes,prev);
 
   // ---- K线回溯：缩量 + 买点阶段（cand 与 watch 同 code 需同步更新） ----
   const candMap={},watchMap={};
@@ -1560,6 +1632,10 @@ function renderPre(){
   const gateTxt=P.gate
     ?'<span class="ok">● 17:40 已更新</span> · 9:30 开盘后按实时行情重判'
     :'<span class="wait">◐ 17:40 更新</span> · 当前展示上一交易日';
+  const ml=r.mainline;
+  const lineTxt=ml
+    ?'当前主线 <b>'+esc(ml.name)+'</b> · 今日 '+ml.d0+' 只 / 昨日 '+(ml.d1||0)+' 只 / 前日 '+(ml.d2||0)+' 只 / 最高 '+(ml.maxLbc||0)+' 板 · 催化需人工确认'
+    :'当前无达标主线 → 预选池空仓，不池外追涨';
 
   box.innerHTML='<div class="pre">'
     +'<div class="pre-h"><span class="ttl">预选池</span>'
@@ -1567,8 +1643,9 @@ function renderPre(){
     +'<div class="pre-gate">'+gateTxt
       +(r.generatedAtBJ?'<span class="gen">'+r.generatedAtBJ+' 生成</span>':'')
     +rl+'</div>'
+    +'<div class="pre-main">'+lineTxt+'</div>'
     +poolsHtml
-    +'<div class="pre-foot">◎ 蓝色=观察目标（≥2板·今日最小量一致·段内无首次分歧·破60日前高），<b>扫描日不买，明日等首次真分歧放量回封</b>；✓ 绿色=进攻目标（今日首次分歧回封，次日满足低开+半小时封板才打）；灰色行=放弃（悬浮看原因）。<b>池②只做首次分歧</b>，再次分歧的尾声板一律灰化。<b>仅观察，不构成投资建议。</b></div>'
+    +'<div class="pre-foot">◎ 蓝色=观察目标（≥2板·今日最小量一致·段内无首次分歧·破60日前高），<b>扫描日不买，明日等首次真分歧放量回封</b>；✓ 绿色=进攻目标（今日首次分歧回封，次日满足低开+半小时封板才打）；灰色行=放弃（悬浮看原因）。<b>两池都只保留主线内标的</b>（概念/主营业务落在主线范围都算），池②只做首次分歧。<b>仅观察，不构成投资建议。</b></div>'
     +'</div>';
 
   const btn=$('preRl');
