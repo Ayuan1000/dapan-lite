@@ -53,6 +53,7 @@ header{position:sticky;top:0;z-index:50;background:linear-gradient(180deg,rgba(1
 .pre-src b{color:var(--tx)}
 .pre-src .hl{color:var(--gold);font-weight:700}
 .pre-src .rt{color:var(--ok);font-weight:700}
+.pre-src .gen{display:block;margin-top:2px;color:var(--tx3);font-size:10px}
 /* ---------- 两个池子：前一日一致 / 前一日真分歧 ---------- */
 .pool{margin:8px 12px 0;border-radius:10px;border:1px solid rgba(45,212,120,.30);background:rgba(45,212,120,.05);overflow:hidden}
 .pool.p2{border-color:rgba(157,107,255,.30);background:rgba(157,107,255,.05)}
@@ -1204,7 +1205,8 @@ function renderPre(){
     +'今日盘中怎么走（一字 / 炸板 / 回封）都不会改写它，'
     +(P.gate?'下一个交易日 17:40 后才会生成新快照。':'今日 17:40 收完盘才生成新快照。')
     +'<br><span class="rt">只有池内的 ✓ / × 用今日实时行情重算</span>；'
-    +'<b>行情或 K 线没取全时一律标「数据不足」，绝不给「可以打板买入」</b>。'
+    +'<b>行情或 K 线没取全时一律标「数据不足」，绝不给「可以打板买入」</b>'
+    +(r.generatedAtBJ?'<span class="gen">快照生成于 '+r.generatedAtBJ+'（北京时间）· 盘中自动感知新版本</span>':'')+'。'
     +'</div>';
 
   box.innerHTML='<div class="pre">'
@@ -1602,6 +1604,27 @@ document.querySelectorAll('.tab').forEach(t=>{
     preKey=k;loadPre(true);   // 跨过17:40 或跨交易日 → 立即重取
   },30000);
   (function(){const tg=preTarget();preKey=tg.date+'|'+(tg.gate?1:0);})();
+  /* 静态快照版本轮询：GitHub Actions 生成新快照并部署后，已打开的页面无需手动刷新。
+     GitHub Pages 没有服务端推送，只能轮询；带 ts 参数绕过 CDN 缓存。 */
+  let snapVer='';
+  setInterval(async()=>{
+    if(DEMO_MODE)return;
+    try{
+      const d=await jget('./data/snapshot.json?ts='+Date.now(),1,6000);
+      if(!d||d.rc!==0||!d.generatedAt)return;
+      if(!snapVer){snapVer=d.generatedAt;return;}
+      if(d.generatedAt===snapVer)return;
+      snapVer=d.generatedAt;
+      const tg=preTarget();
+      if(d.date!==tg.date)return;         // 非目标交易日的快照不采用，避免把旧数据推上来
+      const rj=d;
+      if(!rj.cand.length||!rj.cand[0].stage){await enrichStages(rj,dateOf(rj));}
+      rj.reqDate=tg.date;
+      S.pre={target:tg.date,gate:tg.gate,res:rj,ztN:rj.ztTotal||0,ts:Date.now(),cached:true,loading:false};
+      try{localStorage.setItem('lkl_pre2_'+tg.date,JSON.stringify({date:tg.date,res:rj,ztN:rj.ztTotal||0,ts:Date.now()}));}catch(e){}
+      updateWatch();try{await tickTx();}catch(e){}renderPre();
+    }catch(e){}
+  },60000);
   // 慢轮: 榜单+涨跌家数 30s(盘中) / 5min(盘外)
   (async function slowLoop(){
     while(true){
