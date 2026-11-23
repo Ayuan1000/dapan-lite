@@ -1,0 +1,9 @@
+# Local Netlify folder
+.netlify
+
+# 依赖与本地调试产物（不要推到仓库）
+node_modules
+.build
+*.log
+.DS_Store
+tools/__pycache__

@@ -1,0 +1,20 @@
+[build]
+  publish = "public"
+  functions = "netlify/functions"
+
+[functions]
+  node_bundler = "esbuild"
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Content-Type-Options = "nosniff"
+
+# 预选池快照：每日 17:45 (Asia/Shanghai) 定时生成并落盘，页面直接读取
+# Netlify scheduled functions 的 cron 按 UTC 解释，17:45 CST = 09:45 UTC
+#
+# 注意：必须挂在 snapcron 上，不能挂在 snapshot 上。
+# Netlify scheduled function 没有公共 HTTP URL，带 schedule 的函数直连必 403，
+# 而前端正是通过 /.netlify/functions/snapshot 读取快照。
+[functions."snapcron"]
+  schedule = "45 9 * * 1-5"
