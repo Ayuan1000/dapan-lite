@@ -77,6 +77,10 @@ header{position:sticky;top:0;z-index:50;background:linear-gradient(180deg,rgba(1
 .pc.lack .mk{background:rgba(255,193,92,.16);color:var(--gold)}
 .pc.lack .buy3{background:rgba(255,193,92,.16);color:var(--gold);font-weight:800}
 .pc.off .nm3,.pc.off .cd3,.pc.off .pc-why,.pc.off .bd3{color:var(--tx3)!important}
+/* 池①=观察池：蓝色代表「明日观察目标」，扫描日不买，与池②绿色进攻目标严格区分 */
+.pc.watch{border-left:2px solid var(--blue)}
+.pc.watch .mk{background:var(--blue);color:#fff}
+.pc.watch .buy3{background:rgba(91,155,255,.16);color:var(--blue)}
 .pc-why{font-size:10px;color:var(--tx2);line-height:1.5;margin:5px 0 2px}
 .pc-why b.px,.pc .ln .tx b.px{color:var(--tx);font-weight:800;background:rgba(255,255,255,.10);padding:0 3px;border-radius:4px;font-family:monospace}
 .pc .ln{display:flex;align-items:flex-start;gap:6px;padding:4px 7px;border-radius:7px;margin-top:4px}
@@ -100,6 +104,7 @@ header{position:sticky;top:0;z-index:50;background:linear-gradient(180deg,rgba(1
 .pc-min .mini-tag{font-size:9px;color:var(--tx3);flex:none}
 .pc .mp{font-size:11px;font-weight:800;font-variant-numeric:tabular-nums;margin-left:auto}
 .pool-h .cnt .tgt{color:var(--green);font-weight:800}
+.pool-h .cnt .obs{color:var(--blue);font-weight:800}
 .pre-gate .gen{margin-left:auto;color:var(--tx3);font-size:9.5px;flex:none}
 /* 漏斗 */
 .pf{padding:9px 12px 6px}
@@ -465,8 +470,9 @@ const UT='7eea3edcaed734bea9cbfc24409ed989';
 const EM_ZT='https://push2ex.eastmoney.com/getTopicZTPool?ut='+UT+'&dpt=wz.ztzt&Pageindex=0&pagesize=400&sort=fbt:asc&date=';
 const EM_ZB='https://push2ex.eastmoney.com/getTopicZBPool?ut='+UT+'&dpt=wz.ztzt&Pageindex=0&pagesize=400&sort=fbt:asc&date=';
 const EM_DT='https://push2ex.eastmoney.com/getTopicDTPool?ut='+UT+'&dpt=wz.ztzt&Pageindex=0&pagesize=200&sort=fund:asc&date=';
-const EM_KL2='https://push2his.eastmoney.com/api/qt/stock/kline/get?klt=101&fqt=1&end=20500101&lmt=30&fields1=f1,f2,f3&fields2=f51,f52,f53,f54,f55,f56,f57,f58,f59,f60,f61&ut=fa5fd1943c7b386f172d6893dbfba10b&secid=';
-const EM_KL='https://push2his.eastmoney.com/api/qt/stock/kline/get?klt=101&fqt=1&end=20500101&lmt=30&fields1=f1,f2,f3&fields2=f51,f52,f53,f54,f55,f56,f57&ut=fa5fd1943c7b386f172d6893dbfba10b&secid=';
+/* lmt=120：A 扫描要回溯「连板首板前 60 个日历日」的波段前高，30 根不够。 */
+const EM_KL2='https://push2his.eastmoney.com/api/qt/stock/kline/get?klt=101&fqt=1&end=20500101&lmt=120&fields1=f1,f2,f3&fields2=f51,f52,f53,f54,f55,f56,f57,f58,f59,f60,f61&ut=fa5fd1943c7b386f172d6893dbfba10b&secid=';
+const EM_KL='https://push2his.eastmoney.com/api/qt/stock/kline/get?klt=101&fqt=1&end=20500101&lmt=120&fields1=f1,f2,f3&fields2=f51,f52,f53,f54,f55,f56,f57&ut=fa5fd1943c7b386f172d6893dbfba10b&secid=';
 /* K 线多主机回退：push2his 主域名在部分网络会被 TLS 重协商掍断（fetch failed），
    东财数字前缀 CDN 主机可替代。浏览器端只回退东财同源，避免跨域差异；
    成功主机在页面会话内记忆，后续请求直接命中。 */
@@ -481,7 +487,7 @@ async function jgetKline(url){
       if(d&&d.data&&d.data.klines&&d.data.klines.length>=3){klHostPref=idx;return d;}
     }catch(e){}
   }
-  /* 兜底：腾讯前复权日 K。浏览器实测 CORS 放行（ACAO=*），31 根；
+  /* 兜底：腾讯前复权日 K。浏览器实测 CORS 放行（ACAO=*），120 根；
      只有 6 列，缺换手率 f[10]，形态判定与价位不受影响（hs 记 0）。
      纯静态部署（GitHub Pages）没有服务端代理，东财 K 线常被 CORS 拦，
      这一层是静态环境能算出形态的关键。 */
@@ -489,7 +495,7 @@ async function jgetKline(url){
   if(m){
     const sym=(m[1]==='1'?'sh':'sz')+m[2];
     try{
-      const d=await jget('https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param='+sym+',day,,,30,qfq',1,6000);
+      const d=await jget('https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param='+sym+',day,,,120,qfq',1,6000);
       const o=d&&d.data&&d.data[sym];
       const rows=(o&&(o.qfqday||o.day))||[];
       if(rows.length>=3){
@@ -755,6 +761,69 @@ function preScore(x,th,isMain){ // 强度分：封单力度40 + 板块强度30 +
   if((x.hs||0)>25)sc*=0.92;   // 巨量换手 → 分歧痕迹打折
   return Math.round(sc);
 }
+/* ---- A 扫描：≥2板「今日一致」观察池（与 lib/core.js scanWatch 同口径） ----
+   扫描日只建观察池、当天不买；基准日=连板段内最小量板，段内此前无放量分歧买日，
+   换手<10%，非全程高换手，且收盘破首板前 60 个日历日波段前高。 */
+const A_SCAN={swingDays:60,volFlat:0.98,requireBreakHigh:true,requireVolShrink:true,
+  minCircMvYuan:2e8,maxBaseHs:10,divVolX:1.5,maxBoards:6};
+const asYmd=s=>+String(s==null?'':s).replace(/-/g,'');
+function shiftYmd(n,days){
+  const s=String(n).padStart(8,'0');
+  const d=new Date(Date.UTC(+s.slice(0,4),+s.slice(4,6)-1,+s.slice(6,8)));
+  d.setUTCDate(d.getUTCDate()-days);
+  return d.getUTCFullYear()*10000+(d.getUTCMonth()+1)*100+d.getUTCDate();
+}
+function preScanWatch(ks,x,date){
+  const c=A_SCAN,out={watchOk:false,watchWhy:'',volSeq:[],hsSeq:[],volFlat:null,
+    minVolBoard:false,breakHigh:null,swingHigh:null,firstDivDay:null,scanBoards:0};
+  const fail=w=>{out.watchWhy=w;return out;};
+  if(!ks||ks.length<3)return fail('K线数据不足');
+  let i=ks.length-1;const want=asYmd(date);
+  if(want){while(i>0&&asYmd(ks[i][0])>want)i--;if(asYmd(ks[i][0])!==want)return fail('基准日无K线');}
+  const close=+ks[i][2],sharesRef=(x&&x.ltsz>0&&close>0)?x.ltsz/close:0;
+  let volUnit=1;
+  if(sharesRef>0&&x&&x.hs>0){
+    const est=(+ks[i][5]||0)*10000/sharesRef,r=est>0?x.hs/est:0;
+    if(r>0.005&&r<0.02)volUnit=0.01;
+  }
+  const volAt=f=>(+f[5]||0)*volUnit;
+  const turnAt=f=>{const hs=+(f[10]||0);return hs>0?hs:(sharesRef>0?volAt(f)*10000/sharesRef:0);};
+  const isLimit=k=>{if(k<1||k>=ks.length)return false;const pc=+ks[k-1][2],cc=+ks[k][2];
+    if(!(pc>0&&cc>0))return false;const lim=Math.round(pc*1.1*100)/100;
+    return cc>=lim-0.011&&cc/pc>=1.09;};
+  if(!isLimit(i))return fail('基准日不是涨停板');
+  let s=i;while(isLimit(s-1)&&(i-s)<40)s--;
+  const n=i-s+1;out.scanBoards=n;
+  if(n>c.maxBoards)return fail('连板超过 '+c.maxBoards+' 板');
+  if(n<2)return fail('连板不足 2 板');
+  for(let k=s;k<=i;k++){out.volSeq.push(Math.round(volAt(ks[k])*100)/100);out.hsSeq.push(Math.round(turnAt(ks[k])*100)/100);}
+  const vols=out.volSeq,hss=out.hsSeq;
+  if(vols.some(v=>!(v>0)))return fail('成交量数据不足');
+  if(hss.some(h=>!(h>0)))return fail('换手数据不足');
+  const minVol=Math.min(...vols);out.minVolBoard=vols[n-1]<=minVol*1.000001;
+  if(!out.minVolBoard)return fail('基准日不是段内最小量板');
+  if(hss.every(h=>h>=10))return fail('连板段全程高换手，非一致锁仓');
+  for(let k=s;k<i;k++){const q=k-s;
+    if(vols[q]>=c.divVolX*minVol&&(hss[q]>=c.maxBaseHs||hss[q]>=hss[n-1]*1.3)){
+      out.firstDivDay=asYmd(ks[k][0]);return fail('段内此前已出现首次放量分歧买日，已错过');}}
+  if(hss[n-1]>=c.maxBaseHs)return fail('基准日换手 '+hss[n-1]+'% 不低于 '+c.maxBaseHs+'%');
+  const flat=vols[n-1]/vols[n-2];out.volFlat=Math.round(flat*1000)/1000;
+  if(c.requireVolShrink&&!(flat<c.volFlat))return fail('与前一板量能基本持平（假一致）');
+  const cut=shiftYmd(asYmd(ks[s][0]),c.swingDays);let hi=-Infinity,cnt=0;
+  for(let k=s-1;k>=0;k--){const dk=asYmd(ks[k][0]);if(dk<cut)break;
+    const h=+ks[k][3];if(h>0){if(h>hi)hi=h;cnt++;}}
+  out.swingHigh=cnt?Math.round(hi*100)/100:null;
+  if(c.requireBreakHigh){if(!cnt)return fail('无前高可比样本');
+    out.breakHigh=close>hi;if(!out.breakHigh)return fail('收盘仍在前高压制下');}
+  if(x){
+    if(!(x.ltsz>0))return fail('流通市值数据不足');
+    if(x.ltsz<c.minCircMvYuan)return fail('流通市值低于 2 亿');
+    if(!preMainBoard(x))return fail('非主板 / ST / 退市');
+  }
+  out.watchOk=true;out.watchWhy='最小量一致 · 段内无首次分歧 · 换手<10% · 已破波段前高';
+  return out;
+}
+
 /* 连板周期K线回溯：逐板形态 + 买点阶段（龙空龙战法）
    核心：区分「未分歧的新龙」与「分歧完的加速尾声」——两者当日 zbc 都是 0，但结论相反。
    逐日形态：YZ一字 / TZ开盘涨停被砸开(炸板回封) / LO低开 / XH换手板(振幅≥5%) / PT普通板
@@ -817,10 +886,11 @@ async function preKline(x,date){
       stageTxt=histDiv?'缩量一致·分歧已过':'一致未分歧·待首次换手';
       advice=histDiv?'分歧已消化且今日缩量一致，等下一次回封':'尚未真换手，首次回封是买点';
     }
+    const scan=preScanWatch(ks,x,date);
     return{ratio:ratio,ok:ratio!=null&&ratio<1,stage,stageTxt,stageCls,advice,
            histDiv:histDiv,divN:divN,tzN:tzN,firstDiv:firstDiv,cumHs:cumHs,chs:last.hs,sw:last.sw,
            close:last.c,low:last.l,limUp:last.lim,prevClose:last.pc,
-           cycLow:cycLow===Infinity?last.l:cycLow};
+           cycLow:cycLow===Infinity?last.l:cycLow, ...scan};
   }catch(e){return null;}
 }
 
@@ -880,6 +950,9 @@ async function enrichStages(r,date){
       t.volR=k.ratio;t.stage=k.stage;t.stageTxt=k.stageTxt;t.stageCls=k.stageCls;
       t.advice=k.advice;t.histDiv=k.histDiv;t.divN=k.divN;t.tzN=k.tzN;t.firstDiv=k.firstDiv;t.cumHs=k.cumHs;t.sw=k.sw;t.cycLow=k.cycLow;
       t.close=k.close;t.low=k.low;t.limUp=k.limUp;t.prevClose=k.prevClose;
+      t.watchOk=k.watchOk;t.watchWhy=k.watchWhy;t.volSeq=k.volSeq;t.hsSeq=k.hsSeq;
+      t.volFlat=k.volFlat;t.minVolBoard=k.minVolBoard;t.breakHigh=k.breakHigh;
+      t.swingHigh=k.swingHigh;t.firstDivDay=k.firstDivDay;t.scanBoards=k.scanBoards;
       t.alert=preAlert(t);t.mul=m;t.sc=Math.round((t.baseSc!=null?t.baseSc:t.sc)*m);
     });
   }));
@@ -977,6 +1050,9 @@ async function loadPre(force){
       t.stageCls=k.stageCls;t.advice=k.advice;
       t.histDiv=k.histDiv;t.divN=k.divN;t.tzN=k.tzN;t.firstDiv=k.firstDiv;t.cumHs=k.cumHs;t.sw=k.sw;t.cycLow=k.cycLow;
       t.close=k.close;t.low=k.low;t.limUp=k.limUp;t.prevClose=k.prevClose;
+      t.watchOk=k.watchOk;t.watchWhy=k.watchWhy;t.volSeq=k.volSeq;t.hsSeq=k.hsSeq;
+      t.volFlat=k.volFlat;t.minVolBoard=k.minVolBoard;t.breakHigh=k.breakHigh;
+      t.swingHigh=k.swingHigh;t.firstDivDay=k.firstDivDay;t.scanBoards=k.scanBoards;
       t.alert=preAlert(t);
       t.mul=m;t.sc=Math.round((t.baseSc!=null?t.baseSc:t.sc)*m);
     });
@@ -1023,7 +1099,13 @@ function preAlert(x){
     tip='弱转强只做首次分歧后的转强；反复分歧说明接力资金已疲，不是买点';
     doTxt='今天别买：这是周期内第 '+(x.divN||2)+' 次分歧，不是首次，不做弱转强';
     skipTxt='明天直接跳过，别追 || 反复分歧的尾声板不在本策略买点内';
-  }else if(x.stage==='resume'||(x.stage==='fresh'&&x.histDiv)){
+  }else if(x.stage==='fresh'&&x.histDiv){
+    cls='b';title='别买 · 首次分歧已过';stopReason='首次分歧买日已在段内出现';
+    trigger='连板周期内已经出现过放量分歧买日，今天只是缩量一致';
+    tip='首次分歧买点已经错过；一致板不是接力点，不进「等首次分歧」观察池';
+    doTxt='今天别买：周期内首次放量分歧已经出现过，这不是首次分歧后的弱转强';
+    skipTxt='明天直接跳过 || 已错过首次分歧的缩量一致板不进观察池';
+  }else if(x.stage==='resume'){
     ready=true;cls='g';title='可以买';stopReason='跌破连板周期最低价即放弃买入';
     trigger='开盘价在 '+hi.toFixed(2)+' ~ '+lo.toFixed(2)+' 之间，且 30 分钟内封到 '+nLim.toFixed(2);
     tip='只要高开过 '+gapHi.toFixed(2)+'、或没封板、或跌破 '+stop.toFixed(2)+'，一律放弃';
@@ -1097,12 +1179,12 @@ function vfCollect(r,poolA,poolB){
   let changed=false;
   const add=(x,pool)=>{
     if(!x||!x.code)return;
-    const j=sigJudge(x);
+    const j=sigJudge(x,pool);
     const k=x.code,old=day.stocks[k];
     const rec=old||{
       code:x.code,name:x.name||'',boards:x.boards||1,
       stage:x.stage||'',stageTxt:x.stageTxt||'',pool,
-      green:false,firstSeen:Date.now(),
+      green:false,watch:false,firstSeen:Date.now(),
       nextLim:(x.alert&&x.alert.nextLim)||0,
       gapHi:(x.alert&&x.alert.gapHi)||0,
       lo:(x.alert&&x.alert.lo)||0,hi:(x.alert&&x.alert.hi)||0,
@@ -1110,6 +1192,7 @@ function vfCollect(r,poolA,poolB){
       closeD:0,result:'pending'
     };
     if(j.ok&&!rec.green){rec.green=true;changed=true;}
+    if(j.watch&&!rec.watch){rec.watch=true;changed=true;}
     if(!old){changed=true;day.stocks[k]=rec;}
     // D 日收盘价：快照里的 close（可能没有），由回填时用 K 线补
   };
@@ -1296,7 +1379,15 @@ function renderVerify(){
    注意：这里只回答「此刻能不能打板买入」，不做持仓管理（A股 T+1）。 */
 /* 注意：why 文本不要写 HTML 标签——渲染时 pxHi 会先 esc 再高亮数字，
    写了 <b> 会被转义成字面量 &lt;b&gt; 显示出来。数字由 pxHi 自动加 chip。 */
-function sigJudge(x){
+function sigJudge(x,pool){
+  /* 池①是「今日一致 → 明日等首次真分歧」观察池：扫描日只观察、不买，
+     所以这里永远不给绿灯；watchOk 只决定蓝色观察卡还是灰色放弃行。 */
+  if(pool===1){
+    const ok=!!(x&&x.watchOk===true);
+    return {ok:false,watch:ok,
+      why:ok?'观察目标：今日最小量一致，明日等首次真分歧放量回封，今天只看不买'
+             :('不满足「今日一致」观察池口径'+(x&&x.watchWhy?'（'+x.watchWhy+'）':''))};
+  }
   const a=x.alert||{};
   const q=S.quotes[emToTx(x.code,x.m)];
   const lim=a.nextLim||0, lo=a.lo||0, hi=a.hi||0, gapHi=a.gapHi||0, stop=a.stop||0;
@@ -1398,19 +1489,31 @@ function renderPre(){
   }
 
   /* ---- 极简卡片 ----
-     满足（✓ 可打板）：完整保留，作为「进攻目标」——名称/涨跌幅/理由/关键价位。
-     不满足（×）：只留一行「名称 + 涨跌幅」，灰化；盘中若分歧转一致上板会实时转绿保留。 */
+     池①观察目标（蓝）：今日最小量一致，扫描日只看不买，明日等首次真分歧放量回封。
+     池②进攻目标（绿）：今日首次分歧回封，次日满足低开+半小时封板才可打。
+     不满足（×）：只留一行「名称 + 涨跌幅」，灰化；盘中首次分歧回封会即时转绿。 */
   function pctOf(x){
     const q=S.quotes[emToTx(x.code,x.m)];
     const p=(q&&typeof q.pct==='number')?q.pct:(x&&typeof x.zdp==='number'?x.zdp:0);
     return (p>=0?'+':'')+(+p).toFixed(2)+'%';
   }
-  function poolCard(x,j){
+  function poolCard(x,j,pool){
     const a=x.alert,lack=!!j.lack;
+    if(pool===1&&j.watch){
+      const vs=x.volSeq||[],hs=x.hsSeq||[];
+      const seq=vs.length?'量 '+vs.join('/')+' · 换手 '+hs.join('/')+'%':'';
+      const tail=seq?'<div class="pc-px">'+esc(seq)+(x.swingHigh?' · 前高 '+x.swingHigh:'')+'</div>':'';
+      return '<div class="pc watch">'
+        +'<div class="pc-h"><span class="mk">◎</span>'
+        +'<span class="nm3">'+esc(x.name)+'</span><span class="cd3">'+x.code+'</span>'
+        +'<span class="mp '+((x.zdp||0)>=0?'up':'dn')+'">'+pctOf(x)+'</span>'
+        +'<span class="buy3">观察目标</span></div>'
+        +'<div class="pc-why">'+esc(j.why)+'</div>'+tail+'</div>';
+    }
     if(!j.ok){
-      // 不满足：一行搞定 —— 名称 + 涨跌幅，灰化
+      // 不满足：一行搞定 —— 名称 + 涨跌幅，灰化（剔除原因放在悬浮提示）
       const c=(x.zdp||0)>=0?'up':'dn';
-      return '<div class="pc off'+(lack?' lack':'')+'">'
+      return '<div class="pc off'+(lack?' lack':'')+'"'+(pool===1&&x.watchWhy?' title="'+esc(x.watchWhy)+'"':'')+'>'
         +'<div class="pc-min"><span class="nm3">'+esc(x.name)+'</span>'
         +'<span class="mp '+c+'">'+pctOf(x)+'</span>'
         +'<span class="mini-tag">× '+(lack?'数据不足':'放弃')+'</span></div>'
@@ -1433,23 +1536,26 @@ function renderPre(){
       +'</div>';
   }
 
-  function poolSection(no,title,list,extra){
-    const judged=list.map(x=>({x,j:sigJudge(x)}));
-    judged.sort((p,q)=>(q.j.ok?1:0)-(p.j.ok?1:0)||(q.x.sc||0)-(p.x.sc||0));
-    const onN=judged.filter(o=>o.j.ok).length;
+  function poolSection(no,title,list,extra,pool){
+    const judged=list.map(x=>({x,j:sigJudge(x,pool)}));
+    const rank=o=>pool===1?(o.j.watch?1:0):(o.j.ok?1:0);
+    judged.sort((p,q)=>rank(q)-rank(p)||(q.x.sc||0)-(p.x.sc||0));
+    const onN=judged.filter(rank).length;
+    const noun=pool===1?'观察':'进攻';
     return '<div class="pool '+extra+'">'
       +'<div class="pool-h"><span class="no">'+no+'</span>'+title
-        +'<span class="cnt">'+(onN?'<b class="tgt">进攻 '+onN+'</b>':'暂无进攻目标')+' · 共 '+judged.length+'</span></div>'
-      +(judged.length?judged.map(o=>poolCard(o.x,o.j)).join('')
+        +'<span class="cnt">'+(onN?'<b class="'+(pool===1?'obs':'tgt')+'">'+noun+' '+onN+'</b>':'暂无'+noun+'目标')+' · 共 '+judged.length+'</span></div>'
+      +(judged.length?judged.map(o=>poolCard(o.x,o.j,pool)).join('')
         :'<div class="pool-empty">今日无符合标的，空仓等机会。</div>')
       +'</div>';
   }
 
   /* ---- 两个池子，一次开盘更新 + 盘中实时重判（分歧转一致上板会即时转绿） ---- */
   const poolsHtml=
-    poolSection('①','等首次分歧转一致',poolA,'')
-   +poolSection('②','首次分歧后 · 等弱转强',poolB,'p2');
-  const onTotal=poolAll.filter(x=>sigJudge(x).ok).length;
+    poolSection('①','等首次分歧转一致',poolA,'',1)
+   +poolSection('②','首次分歧后 · 等弱转强',poolB,'p2',2);
+  const onTotal=poolB.filter(x=>sigJudge(x,2).ok).length;
+  const watchTotal=poolA.filter(x=>x.watchOk===true).length;
 
   const gateTxt=P.gate
     ?'<span class="ok">● 17:40 已更新</span> · 9:30 开盘后按实时行情重判'
@@ -1457,12 +1563,12 @@ function renderPre(){
 
   box.innerHTML='<div class="pre">'
     +'<div class="pre-h"><span class="ttl">预选池</span>'
-    +'<span class="st">'+dtxt+'（周'+wd+'）<br>两池 '+poolAll.length+' 只 · <b style="color:'+(onTotal?'var(--green)':'var(--tx3)')+'">进攻 '+onTotal+'</b></span></div>'
+    +'<span class="st">'+dtxt+'（周'+wd+'）<br>两池 '+poolAll.length+' 只 · <b style="color:'+(watchTotal?'var(--blue)':'var(--tx3)')+'">观察 '+watchTotal+'</b> / <b style="color:'+(onTotal?'var(--green)':'var(--tx3)')+'">进攻 '+onTotal+'</b></span></div>'
     +'<div class="pre-gate">'+gateTxt
       +(r.generatedAtBJ?'<span class="gen">'+r.generatedAtBJ+' 生成</span>':'')
     +rl+'</div>'
     +poolsHtml
-    +'<div class="pre-foot">✓ 绿色=可打板进攻目标；灰色行=今日放弃（只留名称与涨跌幅）。<b>弱转强只做连板周期内首次分歧</b>，已分歧过又再次分歧的属尾声，一律灰化不给绿灯。盘中首次分歧回封上板会即时转绿。<b>仅观察，不构成投资建议。</b></div>'
+    +'<div class="pre-foot">◎ 蓝色=观察目标（≥2板·今日最小量一致·段内无首次分歧·破60日前高），<b>扫描日不买，明日等首次真分歧放量回封</b>；✓ 绿色=进攻目标（今日首次分歧回封，次日满足低开+半小时封板才打）；灰色行=放弃（悬浮看原因）。<b>池②只做首次分歧</b>，再次分歧的尾声板一律灰化。<b>仅观察，不构成投资建议。</b></div>'
     +'</div>';
 
   const btn=$('preRl');

@@ -12,6 +12,47 @@ const uniqCodes = snap => Object.keys(
     .reduce((m, x) => (x && x.code ? (m[x.code] = 1) : 0, m), {})
 ).length;
 
+/* 可选风控增强：配置 TUSHARE_TOKEN 后补三项免费源拿不到的剔除项——
+   业绩预告负面（亏/减/预警）、近年曾用名含 ST、最近两期连续亏损 proxy。
+   未配置时保持现有结果，并在快照 warnings 里标注不完整。 */
+const tsCode = c => String(c) + (/^6/.test(String(c)) ? '.SH' : '.SZ');
+async function tushare(api, params, fields) {
+  const r = await fetch('https://api.tushare.pro', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ api_name: api, token: process.env.TUSHARE_TOKEN, params, fields })
+  });
+  const j = await r.json();
+  if (j.code !== 0) throw new Error(api + ' code=' + j.code + ' ' + j.msg);
+  const f = (j.data && j.data.fields) || [];
+  return ((j.data && j.data.items) || []).map(row => {
+    const o = {}; f.forEach((k, i) => { o[k] = row[i]; }); return o;
+  });
+}
+async function applyTushareRisk(snap) {
+  const all = [...(snap.cand || []), ...(snap.watch || [])];
+  const ts = [...new Set(all.map(x => x.code))].map(tsCode).join(',');
+  if (!ts) return;
+  const [fc, nc, fi] = await Promise.all([
+    tushare('forecast', { ts_code: ts }, 'ts_code,end_date,type').catch(() => []),
+    tushare('namechange', { ts_code: ts }, 'ts_code,name').catch(() => []),
+    tushare('fina_indicator', { ts_code: ts }, 'ts_code,end_date,netprofit').catch(() => [])
+  ]);
+  const bad = {};
+  fc.forEach(r => { if (/亏|减|预警/.test(String(r.type || ''))) bad[r.ts_code] = '业绩预告负面'; });
+  nc.forEach(r => { if (/ST/.test(String(r.name || '').toUpperCase())) bad[r.ts_code] = '曾用名含 ST'; });
+  const byCode = {};
+  fi.forEach(r => { (byCode[r.ts_code] || (byCode[r.ts_code] = [])).push(r); });
+  Object.keys(byCode).forEach(k => {
+    const arr = byCode[k].sort((a, b) => String(b.end_date).localeCompare(String(a.end_date))).slice(0, 2);
+    if (arr.length === 2 && arr.every(r => +(r.netprofit || 0) < 0)) bad[k] = '最近两期连续亏损';
+  });
+  const keep = x => !bad[tsCode(x.code)];
+  snap.cand = (snap.cand || []).filter(keep);
+  snap.watch = (snap.watch || []).filter(keep);
+  snap.tushareRisk = bad;
+  snap.warnings = (snap.warnings || []).filter(w => w !== 'tushare_risk_not_loaded');
+}
+
 /* 数据中心出口（Actions runner 在海外）抓东财板块榜会偶发全线失败，
    表现为 warnings 里出现 concept_rank_empty，此时题材退化为行业聚合，容易漏票。
    策略：最多跑 2 轮，取「去重标的数最多、告警最少」的那一份。 */
@@ -48,6 +89,13 @@ const uniqCodes = snap => Object.keys(
   rounds.sort((a, b) => b.uniq - a.uniq || a.warn - b.warn);
   const best = rounds[0].snap;
   if (rounds.length > 1) console.log('两轮取优：去重 ' + rounds[0].uniq + ' 只、告警 ' + rounds[0].warn + ' 条');
+
+  if (process.env.TUSHARE_TOKEN) {
+    try {
+      await applyTushareRisk(best);
+      console.log('Tushare 风控已应用，剔除', Object.keys(best.tushareRisk || {}).length, '只');
+    } catch (e) { console.log('Tushare 风控不可用（保留原结果）:', e && e.message); }
+  }
 
   const all = [...(best.cand || []), ...(best.watch || [])];
   console.log('ztTotal', best.ztTotal, '| hasMain', best.hasMain, '| cand', (best.cand || []).length,
