@@ -789,6 +789,9 @@ async function preKline(x,date){
     const pv=+ks[i-1][5],v=+ks[i][5];
     const ratio=(pv>0&&v>0)?v/pv:null;
     const histDiv=divN>0;
+    // 弱转强只认首次分歧：今日分歧且 divN===1 才算 resume（进池②）；
+    // 此前已分歧过、今日再次分歧（divN>1）属尾声板 → late，不给买点。
+    const firstDiv=(last.TZ||last.LO||last.XH)&&divN===1;
     let stage,stageTxt,stageCls,advice;
     if(last.YZ){
       stage='accel';stageCls='r';
@@ -799,25 +802,23 @@ async function preKline(x,date){
         stageTxt='连续一字·买不到';
         advice='零换手无承接位，等开板看资金接力';
       }
-    }else if(last.TZ){
-      stage='resume';stageCls='g';
-      stageTxt='炸板回封·分歧转一致';
-      advice='回封瞬间即买点，次日超预期可续持';
-    }else if(last.LO){
-      stage='resume';stageCls='g';
-      stageTxt='低开回封·弱转强';
-      advice='低开拉板即买点，押注开盘定价错误被纠正';
-    }else if(last.XH){
-      stage='resume';stageCls='g';
-      stageTxt='换手板·分歧转一致';
-      advice='振幅'+(last.sw*100).toFixed(1)+'%的真换手板，次日弱转强可接力';
+    }else if(last.TZ||last.LO||last.XH){
+      if(firstDiv){
+        stage='resume';stageCls='g';
+        stageTxt=last.TZ?'炸板回封·首次分歧':(last.LO?'低开回封·首次分歧':'换手板·首次分歧');
+        advice='连板周期内首次真分歧（'+divN+' 次）完成转一致；明日低开不破位再封可接力';
+      }else{
+        stage='late';stageCls='r';
+        stageTxt='多次分歧·尾声';
+        advice='周期内已分歧 '+divN+' 次，今日再次分歧属尾声，不是首次弱转强，别接';
+      }
     }else{
       stage='fresh';stageCls=histDiv?'b':'p';
       stageTxt=histDiv?'缩量一致·分歧已过':'一致未分歧·待首次换手';
       advice=histDiv?'分歧已消化且今日缩量一致，等下一次回封':'尚未真换手，首次回封是买点';
     }
     return{ratio:ratio,ok:ratio!=null&&ratio<1,stage,stageTxt,stageCls,advice,
-           histDiv:histDiv,divN:divN,tzN:tzN,cumHs:cumHs,chs:last.hs,sw:last.sw,
+           histDiv:histDiv,divN:divN,tzN:tzN,firstDiv:firstDiv,cumHs:cumHs,chs:last.hs,sw:last.sw,
            close:last.c,low:last.l,limUp:last.lim,prevClose:last.pc,
            cycLow:cycLow===Infinity?last.l:cycLow};
   }catch(e){return null;}
@@ -877,7 +878,7 @@ async function enrichStages(r,date){
       if(!t)return;
       t.shrink=k.ratio==null?'?':(k.ok?'yes':'no');
       t.volR=k.ratio;t.stage=k.stage;t.stageTxt=k.stageTxt;t.stageCls=k.stageCls;
-      t.advice=k.advice;t.histDiv=k.histDiv;t.divN=k.divN;t.tzN=k.tzN;t.cumHs=k.cumHs;t.sw=k.sw;t.cycLow=k.cycLow;
+      t.advice=k.advice;t.histDiv=k.histDiv;t.divN=k.divN;t.tzN=k.tzN;t.firstDiv=k.firstDiv;t.cumHs=k.cumHs;t.sw=k.sw;t.cycLow=k.cycLow;
       t.close=k.close;t.low=k.low;t.limUp=k.limUp;t.prevClose=k.prevClose;
       t.alert=preAlert(t);t.mul=m;t.sc=Math.round((t.baseSc!=null?t.baseSc:t.sc)*m);
     });
@@ -974,7 +975,7 @@ async function loadPre(force){
       t.shrink=k.ratio==null?'?':(k.ok?'yes':'no');
       t.volR=k.ratio;t.stage=k.stage;t.stageTxt=k.stageTxt;
       t.stageCls=k.stageCls;t.advice=k.advice;
-      t.histDiv=k.histDiv;t.divN=k.divN;t.tzN=k.tzN;t.cumHs=k.cumHs;t.sw=k.sw;t.cycLow=k.cycLow;
+      t.histDiv=k.histDiv;t.divN=k.divN;t.tzN=k.tzN;t.firstDiv=k.firstDiv;t.cumHs=k.cumHs;t.sw=k.sw;t.cycLow=k.cycLow;
       t.close=k.close;t.low=k.low;t.limUp=k.limUp;t.prevClose=k.prevClose;
       t.alert=preAlert(t);
       t.mul=m;t.sc=Math.round((t.baseSc!=null?t.baseSc:t.sc)*m);
@@ -1016,6 +1017,12 @@ function preAlert(x){
     tip='明天基本不会低开，也就没有「低开捡便宜」这个机会';
     doTxt='今天一字封死，明天基本不会低开，等不到这个买点';
     skipTxt='直接跳过，别等也别追 || 手里有就拿着，不加仓';
+  }else if(x.stage==='late'){
+    cls='r';title='别买 · 多次分歧尾声';stopReason='多次分歧属尾声，非首次弱转强';
+    trigger='连板周期内已分歧 '+(x.divN||2)+' 次，今天是再次分歧';
+    tip='弱转强只做首次分歧后的转强；反复分歧说明接力资金已疲，不是买点';
+    doTxt='今天别买：这是周期内第 '+(x.divN||2)+' 次分歧，不是首次，不做弱转强';
+    skipTxt='明天直接跳过，别追 || 反复分歧的尾声板不在本策略买点内';
   }else if(x.stage==='resume'||(x.stage==='fresh'&&x.histDiv)){
     ready=true;cls='g';title='可以买';stopReason='跌破连板周期最低价即放弃买入';
     trigger='开盘价在 '+hi.toFixed(2)+' ~ '+lo.toFixed(2)+' 之间，且 30 分钟内封到 '+nLim.toFixed(2);
@@ -1440,8 +1447,8 @@ function renderPre(){
 
   /* ---- 两个池子，一次开盘更新 + 盘中实时重判（分歧转一致上板会即时转绿） ---- */
   const poolsHtml=
-    poolSection('①','等分歧转一致',poolA,'')
-   +poolSection('②','等弱转强',poolB,'p2');
+    poolSection('①','等首次分歧转一致',poolA,'')
+   +poolSection('②','首次分歧后 · 等弱转强',poolB,'p2');
   const onTotal=poolAll.filter(x=>sigJudge(x).ok).length;
 
   const gateTxt=P.gate
@@ -1455,7 +1462,7 @@ function renderPre(){
       +(r.generatedAtBJ?'<span class="gen">'+r.generatedAtBJ+' 生成</span>':'')
     +rl+'</div>'
     +poolsHtml
-    +'<div class="pre-foot">✓ 绿色=可打板进攻目标；灰色行=今日放弃（只留名称与涨跌幅）。盘中分歧转一致上板会即时转绿。<b>仅观察，不构成投资建议。</b></div>'
+    +'<div class="pre-foot">✓ 绿色=可打板进攻目标；灰色行=今日放弃（只留名称与涨跌幅）。<b>弱转强只做连板周期内首次分歧</b>，已分歧过又再次分歧的属尾声，一律灰化不给绿灯。盘中首次分歧回封上板会即时转绿。<b>仅观察，不构成投资建议。</b></div>'
     +'</div>';
 
   const btn=$('preRl');
