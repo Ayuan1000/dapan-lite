@@ -308,6 +308,40 @@ footer{color:var(--tx3);font-size:10px;padding:16px 12px;line-height:1.7;text-al
   section{max-width:1100px;margin:0 auto}
   .row .pr{font-size:14px}
 }
+/* ---------- 次日验证 · 长期战绩 ---------- */
+.vf-stat{display:grid;grid-template-columns:1fr 1fr;gap:6px;padding:8px 10px}
+.vf-card{background:var(--card2);border:1px solid var(--line);border-radius:9px;padding:8px 9px}
+.vf-card.wide{grid-column:1/3}
+.vf-card .t{font-size:10px;color:var(--tx2);margin-bottom:5px;display:flex;align-items:center;gap:5px}
+.vf-card .t b{color:var(--tx);font-weight:700}
+.vf-card .t .tag{font-size:9px;padding:1px 5px;border-radius:4px;background:rgba(157,107,255,.18);color:var(--purple)}
+.vf-card .t .tag.g{background:rgba(0,196,143,.16);color:var(--green)}
+.vf-card .nums{display:flex;gap:10px;flex-wrap:wrap}
+.vf-card .nums .n{font-size:10px;color:var(--tx3)}
+.vf-card .nums .n b{font-size:15px;font-weight:800;font-variant-numeric:tabular-nums;color:var(--tx);margin-right:2px}
+.vf-card .nums .n b.up{color:var(--red)} .vf-card .nums .n b.dn{color:var(--green)}
+.vf-card .bar{height:3px;border-radius:2px;background:var(--line);margin-top:6px;overflow:hidden}
+.vf-card .bar i{display:block;height:100%;background:var(--red)}
+.vf-card .bar.g i{background:var(--green)}
+.vf-day{margin:0 12px 8px;border:1px solid var(--line);border-radius:9px;overflow:hidden;background:var(--card2)}
+.vf-day .dh{display:flex;align-items:center;gap:6px;padding:6px 9px;background:rgba(255,255,255,.03);border-bottom:1px solid var(--line);font-size:10.5px}
+.vf-day .dh b{color:var(--tx);font-weight:700}
+.vf-day .dh .sm{margin-left:auto;color:var(--tx3);font-size:9.5px}
+.vf-row{display:grid;grid-template-columns:1fr auto;gap:4px 8px;padding:6px 9px;border-top:1px solid rgba(255,255,255,.04);align-items:center}
+.vf-row:first-of-type{border-top:none}
+.vf-row .nm{font-size:11px;font-weight:700;display:flex;align-items:center;gap:5px;flex-wrap:wrap}
+.vf-row .nm small{font-size:9px;color:var(--tx3);font-family:monospace;font-weight:400}
+.vf-row .tg{font-size:8.5px;padding:1px 4px;border-radius:4px;font-style:normal;white-space:nowrap}
+.vf-row .tg.g{background:rgba(0,196,143,.16);color:var(--green)}
+.vf-row .tg.p{background:rgba(157,107,255,.18);color:var(--purple)}
+.vf-row .tg.y{background:rgba(247,181,0,.16);color:var(--gold)}
+.vf-row .res{text-align:right;font-size:10px;color:var(--tx2);line-height:1.5;white-space:nowrap}
+.vf-row .res b{font-weight:800}
+.vf-row .res .seal{color:var(--red)} .vf-row .res .no{color:var(--tx3)}
+.vf-empty{padding:14px 12px;text-align:center;color:var(--tx3);font-size:10.5px;line-height:1.7}
+.vf-tools{display:flex;gap:6px;padding:8px 12px}
+.vf-tools button{flex:1;padding:6px;border:1px solid var(--line);background:var(--card2);color:var(--tx2);border-radius:7px;font-size:10.5px;cursor:pointer}
+.vf-tools button.del{border-color:rgba(255,77,79,.35);color:var(--red)}
 </style>
 </head>
 <body>
@@ -341,6 +375,7 @@ footer{color:var(--tx3);font-size:10px;padding:16px 12px;line-height:1.7;text-al
   <div class="tab" data-t="ladder">连板梯队<span class="cnt" id="cLadder">-</span></div>
   <div class="tab" data-t="broken">当前烂板<span class="cnt" id="cBroken">-</span></div>
   <div class="tab" data-t="yest">昨板今况<span class="cnt" id="cYest">-</span></div>
+  <div class="tab" data-t="verify">次日验证<span class="cnt" id="cVerify">-</span></div>
 </div>
 
 <!-- 主线 -->
@@ -394,6 +429,26 @@ footer{color:var(--tx3);font-size:10px;padding:16px 12px;line-height:1.7;text-al
     <div class="rhead g-yest2" id="ybhead" style="display:none"></div>
     <div id="ybkBody"><div class="empty">加载昨日数据…</div></div>
     <div class="hint">昨日触板后炸开未封回（含大幅回落），今日看修复力度。<b style="color:var(--red)">涨停</b>=反包/再攻；<b style="color:var(--gold)">高开</b>=弱转强信号；<b style="color:var(--green)">低走</b>=彻底走弱。此为模式C观察区。</div>
+  </div>
+</section>
+
+<!-- 次日验证 · 长期战绩（从 2026-11-23 开始记录） -->
+<section id="v-verify">
+  <div class="panel">
+    <h3><b>预选次日验证 · 长期统计</b><span class="note" id="vfNote">本地留存 · 自动回填</span></h3>
+    <div id="vfStat"><div class="vf-empty">统计加载中…</div></div>
+    <div class="hint">口径：<b>预选日 D 收盘后入选</b> → 观察 <b>D 的下一个交易日</b> 是否<b style="color:var(--red)">高开</b>（开盘价 &gt; D 收盘价）、是否<b style="color:var(--red)">收盘封板</b>。盘中触发过涨停但收盘打开的算「触板未封」，单列不并入封板。<b>只有 D+1 收盘后才回填</b>，避免盘中数据污染。全部存在本机浏览器，换设备/清缓存会丢，请定期导出。</div>
+  </div>
+  <div class="panel">
+    <h3><b>逐日记录</b><span class="note" id="vfRange">—</span></h3>
+    <div id="vfList"><div class="vf-empty">还没有记录。每日 17:40 后快照定型，两池标的会自动入库。</div></div>
+    <div class="vf-tools">
+      <button id="vfExport">导出 JSON</button>
+      <button id="vfImport">导入 JSON</button>
+      <button id="vfClear" class="del">清空</button>
+    </div>
+    <input type="file" id="vfFile" accept="application/json,.json" style="display:none">
+    <div class="hint">记录起始：<b>2026-11-23</b>。绿灯=当日曾判定「可以打板买入」；池①=前一日一致等分歧转一致，池②=前一日真分歧等弱转强。高开/封板仅为事实统计，<b>不构成投资建议</b>。</div>
   </div>
 </section>
 
@@ -989,6 +1044,230 @@ function alertItems(txt,cls){
   return parts.map((s,i)=>'<div class="ai"><i>'+(parts.length>1?(i+1):'·')+'</i><span>'+pxHi(s)+'</span></div>').join('');
 }
 
+/* ================= 次日验证 · 长期战绩（从 2026-11-23 开始） =================
+   目的：把「预选日 D 的标的」记下来，等 D+1 收盘后回填是否高开/是否封板，
+   长期积累成自己的买入依据。纯静态无后端，存 localStorage。
+   设计要点：
+     1) 幂等 merge：3 秒心跳会反复调用收集，只在「新增/绿灯变化」时才落盘；
+     2) 次日判定只在 D+1 收盘（15:05）后做，盘中不动结果；
+     3) 绿灯是「D 日内曾判定可打板」，一旦亮过就保持，避免盘中回落抹掉记录。 */
+const VF_KEY='lkl_verify_v1';
+const VF_START='20261123'; // 功能启用日（今天），仅用于说明，不按快照日过滤
+function vfLoad(){
+  try{
+    const o=JSON.parse(localStorage.getItem(VF_KEY)||'null');
+    return (o&&o.days&&typeof o.days==='object')?o:{days:{}};
+  }catch(e){return{days:{}};}
+}
+function vfSave(o){
+  try{
+    o.updatedAt=Date.now();
+    localStorage.setItem(VF_KEY,JSON.stringify(o));
+    return true;
+  }catch(e){return false;}
+}
+function vfNextTradeDate(ds){ // D 的下一个交易日（跳过周末）
+  const d=new Date(+ds.slice(0,4),+ds.slice(4,6)-1,+ds.slice(6,8));
+  d.setDate(d.getDate()+1);
+  while(!isWd(dstr(d)))d.setDate(d.getDate()+1);
+  return dstr(d);
+}
+function vfReadyToFill(nextDate){ // D+1 是否已收盘（北京时间 15:05 后）
+  const bj=new Date(Date.now()+8*3600*1000);
+  const lim=new Date(+nextDate.slice(0,4),+nextDate.slice(4,6)-1,+nextDate.slice(6,8),15,5,0);
+  return bj>=lim;
+}
+/* 收集：把当前快照两池标的并入当天记录。
+   green 只置 true 不回退；pool 1=池①等分歧转一致，2=池②等弱转强。 */
+function vfCollect(r,poolA,poolB){
+  // 从今天启用：记录「启用后每次页面展示的快照」，不按快照日倒推补历史。
+  // 因此 17:40 前展示的上一交易日快照也会被记录——它当天已有可验证的下一日表现。
+  if(DEMO_MODE||!r||!r.date)return;
+  const D=r.date,st=vfLoad();
+  const day=st.days[D]||{date:D,createdAt:Date.now(),stocks:{}};
+  let changed=false;
+  const add=(x,pool)=>{
+    if(!x||!x.code)return;
+    const j=sigJudge(x);
+    const k=x.code,old=day.stocks[k];
+    const rec=old||{
+      code:x.code,name:x.name||'',boards:x.boards||1,
+      stage:x.stage||'',stageTxt:x.stageTxt||'',pool,
+      green:false,firstSeen:Date.now(),
+      nextLim:(x.alert&&x.alert.nextLim)||0,
+      gapHi:(x.alert&&x.alert.gapHi)||0,
+      lo:(x.alert&&x.alert.lo)||0,hi:(x.alert&&x.alert.hi)||0,
+      stop:(x.alert&&x.alert.stop)||0,
+      closeD:0,result:'pending'
+    };
+    if(j.ok&&!rec.green){rec.green=true;changed=true;}
+    if(!old){changed=true;day.stocks[k]=rec;}
+    // D 日收盘价：快照里的 close（可能没有），由回填时用 K 线补
+  };
+  poolA.forEach(x=>add(x,1));
+  poolB.forEach(x=>add(x,2));
+  if(changed){st.days[D]=day;vfSave(st);}
+}
+/* 回填：对已到 D+1 收盘日的记录拉 K 线，算高开与封板。
+   用 jgetKline（东财多主机 + 腾讯兜底），拿 D 与 D+1 两根日 K。 */
+let vfBusy=false;
+async function vfBackfill(){
+  if(vfBusy||DEMO_MODE)return;
+  const st=vfLoad();
+  const todo=[];
+  Object.keys(st.days).forEach(D=>{
+    const day=st.days[D],N=vfNextTradeDate(D);
+    if(!vfReadyToFill(N))return; // D+1 还没收盘，不动
+    Object.keys(day.stocks).forEach(code=>{
+      const s=day.stocks[code];
+      if(s.result==='done'||s.result==='nodata')return;
+      todo.push({D,N,s,code});
+    });
+  });
+  if(!todo.length)return;
+  vfBusy=true;
+  try{
+    // 按 code 去重，一只票只拉一次 K 线
+    const byCode={};
+    todo.forEach(t=>{if(!byCode[t.code])byCode[t.code]=[];byCode[t.code].push(t);});
+    for(const code of Object.keys(byCode)){
+      const sec=(code[0]==='6'?'1.':'0.')+code;
+      let rows=[];
+      try{
+        const d=await jgetKline(EM_KL2+sec);
+        rows=((d&&d.data&&d.data.klines)||[]).map(s=>s.split(','));
+      }catch(e){}
+      if(rows.length<2)continue;
+      byCode[code].forEach(t=>{
+        const d0=t.D.slice(0,4)+'-'+t.D.slice(4,6)+'-'+t.D.slice(6,8);
+        const d1=t.N.slice(0,4)+'-'+t.N.slice(4,6)+'-'+t.N.slice(6,8);
+        const r0=rows.find(x=>x[0]===d0),r1=rows.find(x=>x[0]===d1);
+        if(!r0||!r1){ // K 线不足或停牌：留 pending 等下次（可能行情源延迟）
+          return;
+        }
+        const c0=+r0[2],o1=+r1[1],c1=+r1[2],h1=+r1[3];
+        if(!(c0>0&&o1>0&&c1>0))return;
+        const lim1=Math.round(c0*1.1*100)/100; // 预选池仅主板，统一 10%
+        const s=t.s;
+        s.closeD=c0;s.nextDate=t.N;s.nextOpen=o1;s.nextClose=c1;s.nextHigh=h1;
+        s.gapPct=+((o1/c0-1)*100).toFixed(2);
+        s.gapUp=o1>c0;
+        s.closePct=+((c1/c0-1)*100).toFixed(2);
+        s.sealed=c1>=lim1-0.01;
+        s.touched=!s.sealed&&h1>=lim1-0.01;
+        s.limit1=lim1;s.filledAt=Date.now();s.result='done';
+      });
+    }
+    vfSave(st);
+    renderVerify();
+  }catch(e){}
+  finally{vfBusy=false;}
+}
+/* 统计：分组算样本数 / 高开率 / 封板率 */
+function vfStat(){
+  const st=vfLoad(),all=[];
+  Object.keys(st.days).sort().forEach(D=>{
+    const day=st.days[D];
+    Object.keys(day.stocks).forEach(c=>all.push(Object.assign({D},day.stocks[c])));
+  });
+  const grp=(name,pred)=>{
+    const g=all.filter(pred),done=g.filter(x=>x.result==='done');
+    const n=done.length,gap=done.filter(x=>x.gapUp).length,seal=done.filter(x=>x.sealed).length,
+      touch=done.filter(x=>x.touched).length;
+    return {name,n,total:g.length,pending:g.filter(x=>x.result==='pending').length,
+      gap,seal,touch,
+      gapR:n?Math.round(gap/n*100):0,sealR:n?Math.round(seal/n*100):0};
+  };
+  return {
+    all:all,
+    total:all.length,
+    groups:[
+      grp('全部预选',()=>true),
+      grp('可打板（绿灯）',x=>x.green),
+      grp('池① 等分歧转一致',x=>x.pool===1),
+      grp('池② 等弱转强',x=>x.pool===2),
+      grp('绿灯+池②',x=>x.green&&x.pool===2)
+    ]
+  };
+}
+function renderVerify(){
+  const box=$('vfStat');if(!box)return;
+  const S2=vfStat();
+  $('cVerify').textContent=S2.total||'-';
+  $('vfRange').textContent=S2.total?('共 '+S2.total+' 只'):'—';
+  if(!S2.total){
+    box.innerHTML='<div class="vf-empty">还没有记录。<br>每日 17:40 后快照定型，两池标的会自动入库；<br>D+1 收盘后自动回填高开 / 封板结果。</div>';
+    $('vfList').innerHTML='<div class="vf-empty">暂无记录</div>';
+    return;
+  }
+  const card=g=>'<div class="vf-card'+(g.name==='全部预选'?' wide':'')+'">'
+    +'<div class="t"><b>'+esc(g.name)+'</b>'+(g.name==='可打板（绿灯）'?'<span class="tag g">绿灯</span>':'')
+    +(g.n?'':'<span class="tag y">待验证</span>')+'</div>'
+    +'<div class="nums">'
+      +'<span class="n"><b>'+g.n+'</b>已验证</span>'
+      +'<span class="n"><b>'+g.gapR+'%</b>高开</span>'
+      +'<span class="n"><b class="'+(g.sealR>=50?'up':'')+'">'+g.sealR+'%</b>封板</span>'
+      +'<span class="n"><b>'+g.touch+'</b>触板未封</span>'
+    +'</div><div class="bar"><i style="width:'+g.gapR+'%"></i></div>'
+    +'<div class="bar g"><i style="width:'+g.sealR+'%"></i></div></div>';
+  box.innerHTML='<div class="vf-stat">'+S2.groups.map(card).join('')+'</div>';
+
+  // 逐日明细
+  const st=vfLoad(),days=Object.keys(st.days).sort().reverse();
+  $('vfList').innerHTML=days.map(D=>{
+    const day=st.days[D],N=vfNextTradeDate(D);
+    const codes=Object.keys(day.stocks).sort((a,b)=>{
+      const A=day.stocks[a],B=day.stocks[b];
+      return (B.green?1:0)-(A.green?1:0)||(B.boards||0)-(A.boards||0);
+    });
+    const done=codes.filter(c=>day.stocks[c].result==='done').length;
+    const rows=codes.map(c=>{
+      const s=day.stocks[c];
+      const tags=(s.green?'<span class="tg g">绿灯</span>':'')
+        +'<span class="tg p">'+(s.pool===2?'池②弱转强':'池①分歧转一致')+'</span>';
+      let res;
+      if(s.result==='done'){
+        const g=s.gapUp?'<b class="seal">'+s.gapPct+'% 高开</b>':'<b>'+s.gapPct+'% 低开</b>';
+        const seal=s.sealed?'<b class="seal">封板</b>':(s.touched?'<b>触板未封</b>':'<b class="no">未封</b>');
+        res=g+' · '+seal+'<br><span style="color:var(--tx3)">次日收 '+s.closePct+'%</span>';
+      }else{
+        res='<span style="color:var(--gold)">待 '+N.slice(4,6)+'-'+N.slice(6,8)+' 收盘回填</span>';
+      }
+      return '<div class="vf-row"><div class="nm">'+esc(s.name)+' <small>'+s.code+'</small>'
+        +'<span class="tg y">'+(s.boards||1)+'板</span>'+tags+'</div>'
+        +'<div class="res">'+res+'</div></div>';
+    }).join('');
+    return '<div class="vf-day"><div class="dh"><b>'+D.slice(0,4)+'-'+D.slice(4,6)+'-'+D.slice(6,8)+'</b>预选'
+      +'<span class="sm">次日 '+N.slice(4,6)+'-'+N.slice(6,8)+' · '+done+'/'+codes.length+' 已验证</span></div>'+rows+'</div>';
+  }).join('');
+  $('vfList').innerHTML=days.map(D=>{
+    const day=st.days[D],N=vfNextTradeDate(D);
+    const codes=Object.keys(day.stocks).sort((a,b)=>{
+      const A=day.stocks[a],B=day.stocks[b];
+      return (B.green?1:0)-(A.green?1:0)||(B.boards||0)-(A.boards||0);
+    });
+    const done=codes.filter(c=>day.stocks[c].result==='done').length;
+    const rows=codes.map(c=>{
+      const s=day.stocks[c];
+      const tags=(s.green?'<span class="tg g">绿灯</span>':'')
+        +'<span class="tg p">'+(s.pool===2?'池②弱转强':'池①分歧转一致')+'</span>';
+      let res;
+      if(s.result==='done'){
+        const g=s.gapUp?'<b class="seal">'+s.gapPct+'% 高开</b>':'<b>'+s.gapPct+'% 低开</b>';
+        const seal=s.sealed?'<b class="seal">封板</b>':(s.touched?'<b>触板未封</b>':'<b class="no">未封</b>');
+        res=g+' · '+seal+'<br><span style="color:var(--tx3)">次日收 '+s.closePct+'%</span>';
+      }else{
+        res='<span style="color:var(--gold)">待 '+N.slice(4,6)+'-'+N.slice(6,8)+' 收盘回填</span>';
+      }
+      return '<div class="vf-row"><div class="nm">'+esc(s.name)+' <small>'+s.code+'</small>'
+        +'<span class="tg y">'+(s.boards||1)+'板</span>'+tags+'</div>'
+        +'<div class="res">'+res+'</div></div>';
+    }).join('');
+    return '<div class="vf-day"><div class="dh"><b>'+D.slice(0,4)+'-'+D.slice(4,6)+'-'+D.slice(6,8)+'</b>预选'
+      +'<span class="sm">次日 '+N.slice(4,6)+'-'+N.slice(6,8)+' · '+done+'/'+codes.length+' 已验证</span></div>'+rows+'</div>';
+  }).join('');
+}
+
 /* ================= 打板信号池：盘中实时判定 ✓ / × =================
    与「明日弱转强预警」的区别：
      预警 = 收盘后算好「明天怎么买」，一天内不变；
@@ -1188,6 +1467,8 @@ function renderPre(){
 
   const btn=$('preRl');
   if(btn)btn.onclick=()=>{btn.textContent='刷新中…';loadPre(true);};
+  // 战绩入库：两池标的自动记入「次日验证」，绿灯=当日曾判定可打板
+  vfCollect(r,poolA,poolB);
 }
 
 function w2e(sh,zzr){ // 两市实时成交额(元)，腾讯 field37 单位万元
@@ -1519,7 +1800,7 @@ function renderDynamic(){ // 高频部分：现价动的地方
   }
 }
 function renderAll(){
-  renderIndustry();renderLadder();renderBroken();renderYest();renderIndex();renderPre();
+  renderIndustry();renderLadder();renderBroken();renderYest();renderIndex();renderPre();renderVerify();
 }
 /* tab */
 document.querySelectorAll('.tab').forEach(t=>{
@@ -1527,8 +1808,47 @@ document.querySelectorAll('.tab').forEach(t=>{
     document.querySelectorAll('.tab').forEach(x=>x.classList.remove('on'));
     document.querySelectorAll('section').forEach(x=>x.classList.remove('on'));
     t.classList.add('on');$('v-'+t.dataset.t).classList.add('on');
+    if(t.dataset.t==='verify'){renderVerify();vfBackfill();} // 切到战绩页立即刷新+回填
   };
 });
+/* 战绩页工具：导出 / 导入 / 清空 */
+(function(){
+  const ex=$('vfExport'),im=$('vfImport'),cl=$('vfClear'),fi=$('vfFile');
+  if(ex)ex.onclick=()=>{
+    const st=vfLoad();
+    if(!Object.keys(st.days).length){alert('还没有战绩记录');return;}
+    const blob=new Blob([JSON.stringify(st,null,2)],{type:'application/json'});
+    const a=document.createElement('a');a.href=URL.createObjectURL(blob);
+    a.download='打板预选战绩_'+dstr(new Date())+'.json';a.click();
+    setTimeout(()=>URL.revokeObjectURL(a.href),1000);
+  };
+  if(im)im.onclick=()=>{if(fi)fi.click();};
+  if(fi)fi.onchange=()=>{
+    const f=fi.files&&fi.files[0];if(!f)return;
+    const rd=new FileReader();
+    rd.onload=()=>{
+      try{
+        const o=JSON.parse(rd.result);
+        if(!o||!o.days||typeof o.days!=='object')throw new Error('格式不符');
+        const cur=vfLoad();
+        Object.keys(o.days).forEach(D=>{ // 导入与本地合并，本地优先
+          if(!cur.days[D])cur.days[D]=o.days[D];
+          else Object.keys(o.days[D].stocks||{}).forEach(c=>{
+            if(!cur.days[D].stocks[c])cur.days[D].stocks[c]=o.days[D].stocks[c];
+          });
+        });
+        if(vfSave(cur)){renderVerify();alert('导入成功，已与本地记录合并');}
+      }catch(e){alert('导入失败：'+e.message);}
+      fi.value='';
+    };
+    rd.readAsText(f);
+  };
+  if(cl)cl.onclick=()=>{
+    if(!confirm('确认清空全部战绩记录？此操作不可撤销，建议先导出备份。'))return;
+    try{localStorage.removeItem(VF_KEY);}catch(e){}
+    renderVerify();
+  };
+})();
 /* ================= 主循环 ================= */
 (async function(){
   banner('',null);setMarket('off','连接中…');
@@ -1544,6 +1864,7 @@ document.querySelectorAll('.tab').forEach(t=>{
   await tickTx();   // 首屏行情
   renderAll();
   loadPre();        // 预选池（异步，不阻塞首屏）
+  renderVerify();   // 战绩统计计数首屏即可见（回填随后 4s 触发）
   const now=new Date();const h=now.getHours(),m=now.getMinutes();
   const inSession=(h===9&&m>=25)||(h===10)||(h===11&&m<=30)||(h>=13&&h<=14)||(h===15&&m<=0)||(h===9&&m<30&&m>=25);
   S.trading=S.emOk&&inSession;
@@ -1574,6 +1895,10 @@ document.querySelectorAll('.tab').forEach(t=>{
       finally{rtBusy=false;}
     }
   })();
+  /* 战绩回填：每 60 秒检查一次，D+1 收盘后自动补高开/封板结果；
+     回填只在有待办且未 busy 时拉 K 线，不会拖慢 3 秒行情心跳。 */
+  setInterval(()=>{vfBackfill();},60000);
+  setTimeout(()=>{vfBackfill();},4000); // 首屏稍后补一次，避免抢首屏请求
   // 秒级 UI 时钟：即使刷新较慢，倒计时/数据时延也持续可见
   setInterval(()=>{
     const d=new Date();
