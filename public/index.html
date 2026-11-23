@@ -99,6 +99,14 @@ header{position:sticky;top:0;z-index:50;background:linear-gradient(180deg,rgba(1
 .pc .ln.skip .tx .ai i{background:var(--red);color:#fff}
 .pc .ln .tx .ai span{flex:1;min-width:0}
 .pc-px{margin-top:6px;font-size:9.5px;color:var(--tx3);font-family:monospace;line-height:1.5}
+/* 极简：不满足的票 = 一行「名称 + 涨跌幅」 */
+.pc-min{display:flex;align-items:center;gap:6px;padding:1px 0}
+.pc-min .nm3{font-size:11.5px;color:var(--tx3);font-weight:600}
+.pc-min .mp{margin-left:auto;font-size:11px;font-weight:700;font-variant-numeric:tabular-nums}
+.pc-min .mini-tag{font-size:9px;color:var(--tx3);flex:none}
+.pc .mp{font-size:11px;font-weight:800;font-variant-numeric:tabular-nums;margin-left:auto}
+.pool-h .cnt .tgt{color:var(--green);font-weight:800}
+.pre-gate .gen{margin-left:auto;color:var(--tx3);font-size:9.5px;flex:none}
 /* 漏斗 */
 .pf{padding:9px 12px 6px}
 .pf-row{display:grid;grid-template-columns:1fr 56px;column-gap:8px;row-gap:2px;align-items:center;padding:2px 0}
@@ -1388,81 +1396,72 @@ function renderPre(){
     return p.length?'<div class="pc-px">'+p.join(' · ')+'</div>':'';
   }
 
-  /* 单票卡：✓/× + 实时理由 + 可以买入 + 要放弃 + 关键价位
-     三态：可以打板买入（绿）/ 仅观察（灰）/ 数据不足（琥珀，绝不给绿灯） */
+  /* ---- 极简卡片 ----
+     满足（✓ 可打板）：完整保留，作为「进攻目标」——名称/涨跌幅/理由/关键价位。
+     不满足（×）：只留一行「名称 + 涨跌幅」，灰化；盘中若分歧转一致上板会实时转绿保留。 */
+  function pctOf(x){
+    const q=S.quotes[emToTx(x.code,x.m)];
+    const p=(q&&typeof q.pct==='number')?q.pct:(x&&typeof x.zdp==='number'?x.zdp:0);
+    return (p>=0?'+':'')+(+p).toFixed(2)+'%';
+  }
   function poolCard(x,j){
-    const a=x.alert;
-    const lack=!!j.lack;
-    const buy=(a&&a.ready)?alertItems(a.doTxt,'do')
-      :'<div class="ai"><i>·</i><span>明日暂无买点，仅观察</span></div>';
-    const skip=a?alertItems(a.skipTxt,'skip')
-      :'<div class="ai"><i>·</i><span>K 线数据未取到，价位算不出，今日先观望</span></div>';
-    const tag=j.ok?'可以打板买入':(lack?'数据不足':'仅观察');
-    return '<div class="pc '+(j.ok?'on':'off')+(lack?' lack':'')+'">'
+    const a=x.alert,lack=!!j.lack;
+    if(!j.ok){
+      // 不满足：一行搞定 —— 名称 + 涨跌幅，灰化
+      const c=(x.zdp||0)>=0?'up':'dn';
+      return '<div class="pc off'+(lack?' lack':'')+'">'
+        +'<div class="pc-min"><span class="nm3">'+esc(x.name)+'</span>'
+        +'<span class="mp '+c+'">'+pctOf(x)+'</span>'
+        +'<span class="mini-tag">× '+(lack?'数据不足':'放弃')+'</span></div>'
+        +'</div>';
+    }
+    // 满足：进攻目标，完整显示
+    const buy=(a&&a.ready)?alertItems(a.doTxt,'do'):'';
+    const skip=a?alertItems(a.skipTxt,'skip'):'';
+    return '<div class="pc on">'
       +'<div class="pc-h">'
-        +'<span class="mk">'+(j.ok?'✓':'×')+'</span>'
+        +'<span class="mk">✓</span>'
         +'<span class="nm3">'+esc(x.name)+'</span><span class="cd3">'+x.code+'</span>'
-        +'<span class="bd3">'+(x.boards||1)+'板</span>'
-        +'<span class="st2 '+(j.ok?'g':'y')+'">'+esc(x.stageTxt||'形态未定')+'</span>'
-        +'<span class="buy3">'+tag+'</span>'
+        +'<span class="mp '+((x.zdp||0)>=0?'up':'dn')+'">'+pctOf(x)+'</span>'
+        +'<span class="buy3">进攻目标</span>'
       +'</div>'
       +'<div class="pc-why">'+pxHi(j.why)+'</div>'
-      +'<div class="ln do"><span class="lb">可以买入</span><span class="tx">'+buy+'</span></div>'
-      +'<div class="ln skip"><span class="lb">要放弃</span><span class="tx">'+skip+'</span></div>'
+      +(buy?'<div class="ln do"><span class="lb">可以买入</span><span class="tx">'+buy+'</span></div>':'')
+      +(skip?'<div class="ln skip"><span class="lb">要放弃</span><span class="tx">'+skip+'</span></div>':'')
       +pxLine(a)
       +'</div>';
   }
 
-  function poolSection(no,title,desc,list,extra){
+  function poolSection(no,title,list,extra){
     const judged=list.map(x=>({x,j:sigJudge(x)}));
     judged.sort((p,q)=>(q.j.ok?1:0)-(p.j.ok?1:0)||(q.x.sc||0)-(p.x.sc||0));
     const onN=judged.filter(o=>o.j.ok).length;
-    const lackN=judged.filter(o=>o.j.lack).length;
     return '<div class="pool '+extra+'">'
       +'<div class="pool-h"><span class="no">'+no+'</span>'+title
-        +'<span class="cnt">可打板 <b>'+onN+'</b> / 共 '+judged.length
-        +(lackN?' · 数据不足 '+lackN:'')+'</span></div>'
-      +'<div class="pool-desc">'+desc+'</div>'
+        +'<span class="cnt">'+(onN?'<b class="tgt">进攻 '+onN+'</b>':'暂无进攻目标')+' · 共 '+judged.length+'</span></div>'
       +(judged.length?judged.map(o=>poolCard(o.x,o.j)).join('')
-        :'<div class="pool-empty">今日无此类形态，空仓等新机会。</div>')
+        :'<div class="pool-empty">今日无符合标的，空仓等机会。</div>')
       +'</div>';
   }
 
-  /* ---- 界面只保留这两个池子 ---- */
+  /* ---- 两个池子，一次开盘更新 + 盘中实时重判（分歧转一致上板会即时转绿） ---- */
   const poolsHtml=
-    poolSection('①','前一日一致 → 次日等「分歧转一致」',
-      '昨天缩量 / 一字封死，没真换手。明天要<b>先分歧（低开或开板）再回封涨停</b>才是买点；没出现分歧前一律不动手。K 线未取到的票标「形态未定」，先观望。',
-      poolA,'')
-   +poolSection('②','前一日真分歧 → 次日等「弱转强」',
-      '昨天已炸板 / 低开拉板 / 大振幅换手。明天<b>低开 3%~7% 且 30 分钟内回封涨停</b>才是买点；高开、没封板、跌破放弃线一律放弃。',
-      poolB,'p2');
+    poolSection('①','等分歧转一致',poolA,'')
+   +poolSection('②','等弱转强',poolB,'p2');
   const onTotal=poolAll.filter(x=>sigJudge(x).ok).length;
 
   const gateTxt=P.gate
-    ?'<span class="ok">● 已过 17:40</span> 数据已定型 · 次日开盘前不再变动'
-    :'<span class="wait">◐ 未到 17:40</span> 展示上一交易日 · 今日 17:40 后自动切新';
-
-  /* 口径提示：本区同时存在「静态快照」与「今日实时」两类数据，必须显式区分。
-     形态标签 / 明日弱转强预警 = 数据日收盘后算定，全天不变；
-     今日盘中的一字、炸板、回封都不会改写它，要等收盘后才生成新快照。
-     只有打板信号池的 ✓/× 是用今日实时行情重算的。 */
-  const srcTxt='<div class="pre-src">'
-    +'<b>数据口径</b>：每只票的「可以买入 / 要放弃」条件是 <span class="hl">'+dtxt+' 收盘后算定的静态快照</span>，全天不变；'
-    +'今日盘中怎么走（一字 / 炸板 / 回封）都不会改写它，'
-    +(P.gate?'下一个交易日 17:40 后才会生成新快照。':'今日 17:40 收完盘才生成新快照。')
-    +'<br><span class="rt">只有池内的 ✓ / × 用今日实时行情重算</span>；'
-    +'<b>行情或 K 线没取全时一律标「数据不足」，绝不给「可以打板买入」</b>'
-    +(r.generatedAtBJ?'<span class="gen">快照生成于 '+r.generatedAtBJ+'（北京时间）· 盘中自动感知新版本</span>':'')+'。'
-    +'</div>';
+    ?'<span class="ok">● 17:40 已更新</span> · 9:30 开盘后按实时行情重判'
+    :'<span class="wait">◐ 17:40 更新</span> · 当前展示上一交易日';
 
   box.innerHTML='<div class="pre">'
-    +'<div class="pre-h"><span class="ttl">预选池<i>LONG·KONG·LONG</i></span>'
-    +'<span class="st">数据日 <b>'+dtxt+'（周'+wd+'）</b><br>两池共 <b>'+poolAll.length+'</b> 只 · 当前可打板 <b style="color:'+(onTotal?'var(--green)':'var(--tx3)')+'">'+onTotal+'</b> 只'
-    +(r.hasMain?'':' · 主线未成型')+'</span></div>'
-    +'<div class="pre-gate">'+gateTxt+rl+'</div>'
-    +srcTxt
+    +'<div class="pre-h"><span class="ttl">预选池</span>'
+    +'<span class="st">'+dtxt+'（周'+wd+'）<br>两池 '+poolAll.length+' 只 · <b style="color:'+(onTotal?'var(--green)':'var(--tx3)')+'">进攻 '+onTotal+'</b></span></div>'
+    +'<div class="pre-gate">'+gateTxt
+      +(r.generatedAtBJ?'<span class="gen">'+r.generatedAtBJ+' 生成</span>':'')
+    +rl+'</div>'
     +poolsHtml
-    +'<div class="pre-foot">严格口径：连板≥2、一致缩量未首分歧、当日无炸板、主板非ST。两池按「前一日形态」分流，买点/放弃条件来自数据日收盘快照，全天不变；<b>池内 ✓ / × 才用今日实时行情重算</b>。<b>A股 T+1：当日买入不能当日卖出，本区只回答「明天要不要买」，不涉及持仓止损</b>；高开超 +5% 不适用。仅观察，不构成投资建议。</div>'
+    +'<div class="pre-foot">✓ 绿色=可打板进攻目标；灰色行=今日放弃（只留名称与涨跌幅）。盘中分歧转一致上板会即时转绿。<b>仅观察，不构成投资建议。</b></div>'
     +'</div>';
 
   const btn=$('preRl');
