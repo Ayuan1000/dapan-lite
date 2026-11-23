@@ -323,6 +323,7 @@ footer{color:var(--tx3);font-size:10px;padding:16px 12px;line-height:1.7;text-al
     <span class="src">
       <span><i id="sTx" class="ok"></i>腾讯现价<small id="txMs" style="opacity:.7"></small></span>
       <span><i id="sEm" class="warn"></i>东财榜单<small id="emMs" style="opacity:.7"></small></span>
+      <span><i id="sRt" class="ok"></i>全面刷新<small id="rtMs" style="opacity:.7">3s</small></span>
     </span>
   </div>
 </header>
@@ -530,7 +531,7 @@ function demoQuotes(codes){
 
 /* ================= 状态 ================= */
 const S={emOk:false,txOk:false,trading:false,poolDate:'',today:{zt:[],zb:[],dt:[],dtOk:false},yest:{zt:[],zb:[],date:''},
-  quotes:{},idx:{},idx2:{ok:false,ma20:null,preAmt:0,shPrevClose:null},ths:{ok:false,pct:null},breadth:null,mainline:{},lastEm:0,lastTx:0,failEm:0,watch:new Set(),cols:{},
+  quotes:{},idx:{},idx2:{ok:false,ma20:null,preAmt:0,shPrevClose:null},ths:{ok:false,pct:null},breadth:null,mainline:{},lastEm:0,lastTx:0,lastFull:0,rtSeq:0,failEm:0,watch:new Set(),cols:{},
   themes:[],themeOk:false,themeHist:[],newThemes:new Set(),themeTime:'',themeZt:0,
   pre:{loading:true,target:'',gate:false,res:null}};
 
@@ -581,9 +582,12 @@ function txQuote(codes){ // 批量腾讯现价，40/批
   return new Promise(async(resolve)=>{
     const out={};const all=[...codes];
     for(let i=0;i<all.length;i+=40){
-      const chunk=all.slice(i,i+40);const url=TX_QT+chunk.join(',');
+      const chunk=all.slice(i,i+40);
+      // 腾讯行情返回无 Cache-Control，固定 URL 会被浏览器缓存 → 价格永远不动。
+      // 加毫秒级时间戳强制回源；腾讯忽略未知参数。
+      const url=TX_QT+chunk.join(',')+'&_='+Date.now()+'_'+i;
       try{
-        const r=await fetch(url);const buf=await r.arrayBuffer();const txt=GBK.decode(buf);
+        const r=await fetch(url,{cache:'no-store'});const buf=await r.arrayBuffer();const txt=GBK.decode(buf);
         const re=/v_(sh|sz|bj)(\d+)="([^"]*)"/g;let m;
         while((m=re.exec(txt))){out[(m[1]==='sh'?'sh':m[1]==='sz'?'sz':'bj')+m[2]]=parseTx(m[3]);}
       }catch(e){/* single batch fail -> keep old */}
@@ -1488,17 +1492,24 @@ async function tickTx(){ // 秒级现价
   renderDynamic();
 }
 /* ================= 渲染调度 ================= */
-let lastFull=0;
+let lastFull=0,rtBusy=false;
+function isSess(){ // 9:25-15:30 且为工作日（用实时日期，跨日也准）
+  const d=new Date(),n=d.getHours()*60+d.getMinutes();
+  return isWd(dstr(d))&&n>=565&&n<=930;
+}
 function renderDynamic(){ // 高频部分：现价动的地方
   const now=Date.now();
   const d=new Date();const hh=d.getHours(),mm=d.getMinutes();
   const trading=hh*60+mm>=565&&hh*60+mm<=930; // 9:25-15:30 approximation, tick-level
   const t=$('dataTime');
-  t.textContent=new Date().toTimeString().slice(0,8);
-  $('clock').textContent=t.textContent;
-  $('txMs').textContent=((Date.now()-S.lastTx)/1000).toFixed(0)+'s前';
-  if(S.lastEm)$('emMs').textContent=Math.round((Date.now()-S.lastEm)/1000)+'s前';
+  // 显示「数据的最后更新时间」而不是当前时间，避免误以为盘面停住时数据还是新的
+  t.textContent=S.lastFull?new Date(S.lastFull).toTimeString().slice(0,8):'--';
+  $('clock').textContent=d.toTimeString().slice(0,8);
+  $('txMs').textContent=S.lastTx?Math.round((now-S.lastTx)/1000)+'s前':'-';
+  if(S.lastEm)$('emMs').textContent=Math.round((now-S.lastEm)/1000)+'s前';
+  // rtMs 倒计时由独立秒级时钟统一写，这里不重复写，避免 "3s" / "3s前" 互相覆盖
   setSrc('sTx',S.txOk);setSrc('sEm',S.emOk);
+  setSrc('sRt',!!S.lastFull&&now-S.lastFull<15000);
   setMarket(S.trading?'live':(hh<15?'halt':'off'),S.trading?'盘中':'休市/等待开盘');
   // 节流全量表格重绘（1.5s）避免每 2s 重绘闪烁；价格数字始终更新（改文本更快——简化：整区块 1.5s 重绘）
   if(now-lastFull>1500){lastFull=now;
@@ -1535,24 +1546,50 @@ document.querySelectorAll('.tab').forEach(t=>{
   loadPre();        // 预选池（异步，不阻塞首屏）
   const now=new Date();const h=now.getHours(),m=now.getMinutes();
   const inSession=(h===9&&m>=25)||(h===10)||(h===11&&m<=30)||(h>=13&&h<=14)||(h===15&&m<=0)||(h===9&&m<30&&m>=25);
-  const inAm=h===9||h===10||(h===11&&m<=30);
   S.trading=S.emOk&&inSession;
-  // 快轮: 现价 盘中1.5s / 盘外最低5s
-  setInterval(async()=>{
-    const d=new Date(),hh=d.getHours(),mm=d.getMinutes();
-    const sess=(hh*60+mm>=560&&hh*60+mm<=930)&&isWd(today);
-    if(!sess&&Date.now()-S.lastTx<5000)return; // 盘外限速5s
-    await tickTx();
-    if(S.watch.size<2)return;
-  },1500);
-  // 题材榜轮询: 30s(盘中) / 失败快速重试 / 盘外低频保活
-  setInterval(async()=>{
-    const d=new Date(),hh=d.getHours(),mm=d.getMinutes();
-    const sess=(hh*60+mm>=560&&hh*60+mm<=930)&&isWd(today);
-    if(sess)await loadTheme();
-    else if(!S.themeOk){if(Math.random()<0.5)await loadTheme();} // 失败时更快重试
-    else if(Math.random()<0.2)await loadTheme(); // 盘外低频保活
-  },30000);
+  /* ===== 统一实时心跳：盘中 3 秒 / 盘外 5 秒，一轮把「全面数据」刷一遍 =====
+     每轮固定刷新：腾讯现价 + 东财涨停/炸板/跌停池 + 涨跌家数（都是打板决策相关）；
+     题材榜 / 大盘MA20 / 同花顺指数按 3 轮错峰（各 9 秒内必更新一次），
+     避免同一瞬间把上游接口打满。rtBusy 保证一轮没跑完不叠加下一轮。 */
+  (async function rtHeartbeat(){
+    while(true){
+      await sleep(isSess()?3000:5000);
+      if(rtBusy)continue;
+      rtBusy=true;
+      const t0=Date.now();
+      try{
+        S.trading=S.emOk&&isSess();
+        await tickTx();
+        await loadTodayPools();
+        await loadBreadth();
+        const k=S.rtSeq++%3;
+        if(k===0)await loadTheme();
+        else if(k===1)loadIdx();
+        else loadThs();
+        S.trading=S.emOk&&isSess();
+        updateWatch();renderAll();
+        setSrc('sEm',S.emOk);
+        S.lastFull=Date.now();S.rtCost=Date.now()-t0;
+      }catch(e){}
+      finally{rtBusy=false;}
+    }
+  })();
+  // 秒级 UI 时钟：即使刷新较慢，倒计时/数据时延也持续可见
+  setInterval(()=>{
+    const d=new Date();
+    $('clock').textContent=d.toTimeString().slice(0,8);
+    if(S.lastFull){
+      const period=isSess()?3000:5000;
+      const age=Date.now()-S.lastFull;
+      const left=Math.max(0,Math.ceil((period-age)/1000));
+      $('rtMs').textContent=(age>period*2?'卡住 ':'')+left+'s';
+      $('dataTime').textContent=new Date(S.lastFull).toTimeString().slice(0,8);
+      setSrc('sRt',age<period*2);
+    }else{
+      $('dataTime').textContent='--';
+      setSrc('sRt',false);
+    }
+  },1000);
   // 预选池闸门：每 30s 校验基准日 + 17:40 是否已过；跨越边界自动刷新
   let preKey='';
   setInterval(()=>{
@@ -1584,23 +1621,7 @@ document.querySelectorAll('.tab').forEach(t=>{
       updateWatch();try{await tickTx();}catch(e){}renderPre();
     }catch(e){}
   },60000);
-  // 慢轮: 榜单+涨跌家数 30s(盘中) / 5min(盘外)
-  (async function slowLoop(){
-    while(true){
-      await sleep(S.trading?15000:300000);
-      const d=new Date(),hh=d.getHours(),mm=d.getMinutes();
-      const sess=(hh*60+mm>=560&&hh*60+mm<=930)&&isWd(today);
-      S.trading=S.emOk&&sess;
-      await loadTodayPools();
-      await loadBreadth();
-      loadIdx();
-      loadThs();
-      updateWatch();
-      renderAll();
-      setSrc('sEm',S.emOk);
-      S.lastEm=Date.now();
-    }
-  })();
+  // S.trading 随实时心跳更新（不再有第二套慢轮）
 })();
 </script>
 </body>
