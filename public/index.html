@@ -547,21 +547,22 @@ async function loadTheme(){
     renderThemes();return;
   }
   const date=S.poolDate||S.yest.date||yest;
-  try{
-    const d=await jget('./.netlify/functions/theme?date='+date,2,26000);
-    if(d&&d.rc===0&&d.concepts){
-      S.themeOk=true;S.themes=d.concepts;S.themeZt=d.ztTotal||0;S.themeTime=new Date().toTimeString().slice(0,5);
-      if(d.concepts.length){
-        S.themeHist.push({t:Date.now(),top1:(d.concepts[0]||{}).name||'',ranks:d.concepts.slice(0,5).map(c=>c.name),
-          scores:Object.fromEntries(d.concepts.slice(0,8).map(c=>[c.name,c.score]))});
-        if(S.themeHist.length>40)S.themeHist.shift();
-        S.newThemes=new Set();
-        const now=Date.now();const old=[...S.themeHist].reverse().find(h=>now-h.t>=5*60*1000);
-        if(old)d.concepts.slice(0,3).forEach(c=>{if(c.name!==old.top1&&!(old.ranks||[]).includes(c.name))S.newThemes.add(c.name);});
-      }
-      renderThemes();
-    }else{S.themeOk=false;renderThemes();}
-  }catch(e){S.themeOk=false;renderThemes();}
+  // 纯静态部署没有服务端函数：题材榜直接用当日涨停池按行业(hybk)自聚合，
+  // 与 loadPre 的兜底口径完全一致（preSyncThemes），不再依赖任何远端接口。
+  const zt=(date===today&&S.today.zt&&S.today.zt.length)?S.today.zt
+          :((S.yest.zt&&S.yest.zt.length)?S.yest.zt:[]);
+  if(!zt.length){S.themeOk=false;renderThemes();return;}
+  const concepts=preSyncThemes(zt);
+  S.themeOk=true;S.themes=concepts;S.themeZt=zt.length;S.themeTime=new Date().toTimeString().slice(0,5);
+  if(concepts.length){
+    S.themeHist.push({t:Date.now(),top1:(concepts[0]||{}).name||'',ranks:concepts.slice(0,5).map(c=>c.name),
+      scores:Object.fromEntries(concepts.slice(0,8).map(c=>[c.name,c.score]))});
+    if(S.themeHist.length>40)S.themeHist.shift();
+    S.newThemes=new Set();
+    const now=Date.now();const old=[...S.themeHist].reverse().find(h=>now-h.t>=5*60*1000);
+    if(old)concepts.slice(0,3).forEach(c=>{if(c.name!==old.top1&&!(old.ranks||[]).includes(c.name))S.newThemes.add(c.name);});
+  }
+  renderThemes();
 }
 
 /* ================= fetch helpers ================= */
@@ -599,13 +600,11 @@ function parseTx(body){
 }
 /* ================= 东财池 ================= */
 async function emPool(kind,date){
-  // 直连东财失败时自动走 Netlify Function 代理（绕开东财对本机/网络 IP 的限流）
+  // 直连东财（该接口回显 Origin，浏览器可跨域）；纯静态部署没有代理函数，
+  // 失败就交给上层逐日回退 / 静态快照兜底。
   const direct=(kind==='ZT'?EM_ZT:kind==='DT'?EM_DT:EM_ZB)+date;
   let d=null;
   try{d=await jget(direct);}catch(e){}
-  if(!d||d.rc!==0||!d.data){
-    try{d=await jget('./.netlify/functions/pool?date='+date+'&kind='+kind);}catch(e){}
-  }
   if(!d||d.rc!==0||!d.data)throw new Error('pool fail '+(d&&d.rc));
   return d.data; // {tc, qdate, pool}
 }
@@ -850,12 +849,10 @@ async function loadPre(force){
   S.pre={target:tg.date,gate:tg.gate,res:null,loading:true,cached:false};
   renderPre();
 
-  // ---- 首选：读取 Netlify 定时快照（每日17:45生成，不依赖实时接口） ----
-  // 两级读取：先读已落盘快照（毫秒级），命中即返回；
-  // 未命中再走实时计算（服务端最多 24 秒，故前端超时给 32 秒）。
+  // ---- 首选：读取静态快照（GitHub Actions 每日 17:45 生成并在同一次部署里上线） ----
   if(!DEMO_MODE){
     // 0) 静态快照（GitHub Pages）：仓库内 data/snapshot.json，由 GitHub Actions 每日生成。
-    //    纯静态环境没有服务端函数，这是首选且正常情况下必然命中的路径。
+    //    纯静态环境没有服务端函数，这是唯一快路径；未命中则走下方实时自算兜底。
     try{
       const spj=await jget('./data/snapshot.json',1,6000);
       if(spj&&spj.rc===0&&spj.cand&&spj.date===tg.date){
@@ -864,34 +861,6 @@ async function loadPre(force){
         rj.reqDate=tg.date;
         S.pre={target:tg.date,gate:tg.gate,res:rj,ztN:rj.ztTotal||0,ts:Date.now(),cached:true,loading:false};
         try{localStorage.setItem(key,JSON.stringify({date:tg.date,res:rj,ztN:rj.ztTotal||0,ts:Date.now()}));}catch(e){}
-        await preReady();return;
-      }
-    }catch(e){}
-    // 1) 已落盘快照（最快）
-    try{
-      const sp0=await jget('./.netlify/functions/snapshot?stored=1',1,8000);
-      if(sp0&&sp0.rc===0&&sp0.cand&&sp0.date===tg.date){
-        const r0=sp0;
-        if(!r0.cand.length||!r0.cand[0].stage){ await enrichStages(r0,dateOf(r0)); }
-        r0.reqDate=tg.date;
-        S.pre={target:tg.date,gate:tg.gate,res:r0,ztN:r0.ztTotal||0,ts:Date.now(),cached:true,loading:false};
-        try{localStorage.setItem(key,JSON.stringify({date:tg.date,res:r0,ztN:r0.ztTotal||0,ts:Date.now()}));}catch(e){}
-        await preReady();return;
-      }
-    }catch(e){}
-    // 2) 实时计算（服务端 buildSnapshot 预算 24 秒 < 平台 30 秒上限）
-    try{
-      const sp=await jget('./.netlify/functions/snapshot?date='+tg.date,2,32000);
-      if(sp&&sp.rc===0&&sp.cand){
-        const r2=sp;
-        // 快照的阶段/预警字段已算好，直接复用；缺失则本地补算
-        if(!r2.cand.length||!r2.cand[0].stage){
-          // 快照未带阶段信息 → 走本地回溯
-          await enrichStages(r2,dateOf(r2));
-        }
-        r2.reqDate=tg.date;
-        S.pre={target:tg.date,gate:tg.gate,res:r2,ztN:r2.ztTotal||0,ts:Date.now(),cached:true,loading:false};
-        try{localStorage.setItem(key,JSON.stringify({date:tg.date,res:r2,ztN:r2.ztTotal||0,ts:Date.now()}));}catch(e){}
         await preReady();return;
       }
     }catch(e){}
@@ -913,18 +882,12 @@ async function loadPre(force){
       if(!zt.length)await sleep(500);
     }
   }
-  // ---- 题材聚合 ----
-  try{
-    if(DEMO_MODE){
-      themes=S.themes||[];
-    }else{
-      const d=await jget('./.netlify/functions/theme?date='+date,2,26000);
-      if(d&&d.rc===0&&d.concepts)themes=d.concepts;
-    }
-  }catch(e){}
-  if(!themes.length&&date===today&&S.themeOk)themes=S.themes||[];
-  // 题材接口不可用 → 用行业(hybk)自聚合兜底，保证漏斗第一级不因接口挂掉而全灭
-  if(!themes.length&&zt.length)themes=preSyncThemes(zt);
+  // ---- 题材聚合（纯静态：直接用当日涨停池按行业自聚合） ----
+  if(DEMO_MODE){
+    themes=S.themes||[];
+  }else if(zt.length){
+    themes=preSyncThemes(zt);
+  }
 
   const res=preCompute(zt,themes);
 
@@ -1474,7 +1437,7 @@ async function loadBreadth(){
     if(sh&&sz)S.breadth={up:(sh.f104||0)+(sz.f104||0),down:(sh.f105||0)+(sz.f105||0),flat:(sh.f106||0)+(sz.f106||0)};
   }catch(e){}
 }
-async function loadIdx(){ // 大盘环境：MA20/昨日两市成交额（直连优先，函数兑底）
+async function loadIdx(){ // 大盘环境：MA20/昨日两市成交额（全部浏览器直连，K 线多主机回退）
   if(DEMO_MODE){S.idx2={ok:true,ma20:3450.5,preAmt:2.34e12,shPrevClose:3421.18,shPreDate:''};return;}
   const parse=d=>((d.data&&d.data.klines)||[]).map(s=>{const f=s.split(',');return{date:f[0],close:+f[2],amt:+f[6]};});
   try{
@@ -1488,10 +1451,6 @@ async function loadIdx(){ // 大盘环境：MA20/昨日两市成交额（直连�
       S.idx2={ok:true,ma20:+(closes.reduce((a,b)=>a+b,0)/20).toFixed(2),preAmt:(shK[si].amt||0)+(szK[zi].amt||0),shPrevClose:shK[si].close,shPreDate:shK[si].date};
       return;
     }
-  }catch(e){}
-  try{ // 兑底：函数代理
-    const d=await jget('./.netlify/functions/idx',1,12000);
-    if(d&&d.rc===0)S.idx2={ok:true,ma20:d.ma20,preAmt:d.preAmt||0,shPrevClose:d.shPrevClose,shPreDate:d.shPreDate||''};
   }catch(e){}
 }
 async function loadThs(){ // 同花顺883900 昨日涨停表现指数（CORS开放，浏览器直连）

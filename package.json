@@ -1,19 +1,16 @@
 {
   "name": "dapan_lite",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "description": "打板看板 · 预选池与弱转强预警（纯静态托管于 GitHub Pages）",
+  "private": true,
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "snapshot": "node scripts/gen-snapshot.js",
+    "preview": "node .build/preview.js"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "dependencies": {
-    "@netlify/blobs": "^11.1.9",
-    "esbuild": "^0.28.2"
-  },
   "devDependencies": {
-    "netlify-cli": "^27.20.0"
+    "ws": "^8.23.0"
   }
 }
