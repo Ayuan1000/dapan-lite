@@ -5,7 +5,8 @@
    不带参数时按 17:40 闸门选目标交易日（17:40 前取上一交易日）。 */
 const fs = require('fs');
 const path = require('path');
-const { buildSnapshot, targetDate, bjParts } = require('../lib/core.js');
+const { buildSnapshot, targetDate, bjParts, prevWd, ztPool } = require('../lib/core.js');
+const { buildDragonPool } = require('../lib/dragon.js');
 
 const uniqCodes = snap => Object.keys(
   [...(snap.cand || []), ...(snap.watch || [])]
@@ -112,6 +113,20 @@ async function applyTushareRisk(snap) {
       console.log('Tushare 风控不可用（保留原结果）:', e && e.message);
       best.warnings = (best.warnings || []).concat('tushare_risk_not_loaded');
     }
+  }
+
+  /* 龙空龙选股：额外抓最近 3 个交易日涨停池，按「出身→地位→买点」三要素选总龙头。
+     这是预选池唯一权威结果；旧的 cand/watch 仅保留为数据兜底，不再参与展示。 */
+  try {
+    const dates = [date, prevWd(date, 1), prevWd(date, 2), prevWd(date, 3)];
+    const pools = await Promise.all(dates.map(d => ztPool(d).catch(() => [])));
+    best.dragon = buildDragonPool(pools);
+    console.log('龙空龙：', JSON.stringify(best.dragon.funnel),
+      '主线', best.dragon.main && best.dragon.main.name,
+      '买点', best.dragon.leaders.map(x => x.name + '/' + x.type).join(',') || '无');
+  } catch (e) {
+    console.log('龙空龙选股失败:', e && e.message);
+    best.dragon = { ok: false, why: '数据不足', main: null, leaders: [], removed: [], funnel: { zt: 0, main: 0, leader: 0 } };
   }
 
   const all = [...(best.cand || []), ...(best.watch || [])];

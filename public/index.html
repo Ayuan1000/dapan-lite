@@ -108,6 +108,32 @@ header{position:sticky;top:0;z-index:50;background:linear-gradient(180deg,rgba(1
 .pre-gate .gen{margin-left:auto;color:var(--tx3);font-size:9.5px;flex:none}
 .pre-main{padding:4px 12px;font-size:10px;color:var(--tx2);border-bottom:1px solid rgba(255,255,255,.05)}
 .pre-main b{color:var(--blue)}
+/* 龙空龙：极简三要素展示 */
+.dg-funnel{display:flex;align-items:center;gap:8px;padding:8px 12px;border-bottom:1px solid rgba(255,255,255,.05)}
+.dg-funnel>div{flex:1;text-align:center}
+.dg-funnel b{display:block;font-size:18px;font-weight:800;color:var(--tx2)}
+.dg-funnel .final b{color:var(--green)}
+.dg-funnel span{font-size:9.5px;color:var(--tx3)}
+.dg-funnel i{font-style:normal;color:var(--tx3);font-size:12px}
+.dg-main{padding:7px 12px;font-size:10.5px;color:var(--tx2);border-bottom:1px solid rgba(255,255,255,.05);line-height:1.6}
+.dg-main b{color:var(--blue)}
+.dg-none{padding:12px;font-size:11px;color:var(--tx3);text-align:center}
+.dg-card{margin:8px 10px;padding:9px 10px;border-radius:9px;border:1px solid rgba(255,255,255,.07);background:var(--card2)}
+.dg-card.on{border-color:rgba(45,212,120,.55)}
+.dg-card.hot{border-color:rgba(255,193,92,.5)}
+.dg-card.wait{opacity:.7}
+.dg-h{display:flex;align-items:center;gap:7px;flex-wrap:wrap}
+.dg-h .bd{font-size:9.5px;font-weight:800;background:var(--blue);color:#fff;padding:2px 6px;border-radius:5px}
+.dg-h b{font-size:13px}
+.dg-h .cd{font-size:9px;color:var(--tx3);font-family:monospace}
+.dg-h .px{font-size:12px;font-weight:800;margin-left:auto;font-variant-numeric:tabular-nums}
+.dg-h .st{font-size:9px;color:var(--tx3)}
+.dg-card.on .st{color:var(--green);font-weight:800}
+.dg-buy{margin-top:7px;font-size:11px;font-weight:800;color:var(--green)}
+.dg-why{margin-top:3px;font-size:10px;color:var(--tx2);line-height:1.6}
+.dg-act{margin-top:5px;font-size:10px;color:var(--gold);line-height:1.6}
+.dg-cut{margin:6px 10px;padding:6px 8px;border-radius:8px;background:rgba(255,255,255,.02)}
+.dg-cut .dh{font-size:9.5px;color:var(--tx3);margin-bottom:3px}
 /* 漏斗 */
 .pf{padding:9px 12px 6px}
 .pf-row{display:grid;grid-template-columns:1fr 56px;column-gap:8px;row-gap:2px;align-items:center;padding:2px 0}
@@ -1514,6 +1540,95 @@ function preTag(x,th){
   return t.map(a=>'<span class="tg '+a[1]+'">'+esc(a[0])+'</span>').join('');
 }
 
+/* ---------------- 龙空龙预选池（唯一展示口径）----------------
+   出身(主线) → 地位(总龙头) → 买点(首次分歧回封 / 弱转强加速)。
+   不做题材配对、不做最低量、不做60日前高——那些是选股噪音，不是选龙。 */
+function renderDragon(box,r,rl){
+  const D=r.dragon||{ok:false,why:'龙空龙数据未生成',leaders:[],removed:[],funnel:{}};
+  const dt=r.date||'',dtxt=dt?dt.slice(0,4)+'-'+dt.slice(4,6)+'-'+dt.slice(6,8):'--';
+  const wd='日一二三四五六'[dayOf(dt)];
+  const gateTxt=(S.pre&&S.pre.gate)
+    ?'<span class="ok">● 17:40 已更新</span> · 9:30 后按实时行情确认买点'
+    :'<span class="wait">◐ 17:40 更新</span> · 当前展示上一交易日';
+
+  const fn=D.funnel||{};
+  const funnel='<div class="dg-funnel">'
+    +'<div><b>'+(fn.zt||0)+'</b><span>全市场涨停</span></div><i>→</i>'
+    +'<div><b>'+(fn.main||0)+'</b><span>主线内</span></div><i>→</i>'
+    +'<div class="final"><b>'+(fn.leader||0)+'</b><span>总龙头买点</span></div>'
+    +'</div>';
+
+  const m=D.main;
+  const mainHtml=!m
+    ?'<div class="dg-none">'+esc(D.why||'今日无合格主线，空仓等待')+'</div>'
+    :'<div class="dg-main">主线 <b>'+esc(m.name)+'</b>'
+      +' · 梯队：'+m.top+'板高标 / '+m.second+'只二板 / '+m.first+'只首板'+(m.zhongjun?' / 有中军':'')
+      +' · 连续 '+m.counts.join('/')+' 天'+(m.resilient?' · 分歧可修复':'')
+      +'</div>';
+
+  function priceOf(x){
+    const q=S.quotes[emToTx(x.code,x.m)];
+    return q&&q.price?Number(q.price).toFixed(2):'--';
+  }
+  /* 买日 = 当前正处于交易时段（9:30~15:00，工作日）。此时快照基准日是上一交易日，
+     今天才是真正的买日，用实时行情确认；收盘后/17:40后则只是「下一交易日盯盘清单」，
+     绝不把昨天已发生的回封当成今天还能买的信号。 */
+  const bjNow=new Date(Date.now()+8*3600*1000);          // 统一按北京时间判断交易时段
+  const nmins=bjNow.getUTCHours()*60+bjNow.getUTCMinutes();
+  const bjDay=bjNow.getUTCFullYear()+pad2(bjNow.getUTCMonth()+1)+pad2(bjNow.getUTCDate());
+  const isBuyDay=isWd(bjDay)&&nmins>=570&&nmins<900;
+  function card(x){
+    const q=S.quotes[emToTx(x.code,x.m)]||{};
+    const lim=q.limit||0,price=q.price||0,pc=q.prev||0,op=q.open||0;
+    const sealed=!!q.sealed||(lim>0&&price>=lim*0.995);
+    const hm=(S.rtNow?new Date(S.rtNow):new Date());
+    const mins=hm.getHours()*60+hm.getMinutes();
+    const noQuote=!q.price;
+    let cls='wait',tag='行情确认中',act='';
+    if(!isBuyDay){
+      cls='hot';tag='下一交易日盯盘';
+      act=x.type==='first_div'
+        ?'今日首次分歧回封 → 明日只等「超预期高开 + 早盘快速上板」；低开/磨到午后/冲高回落 → 放弃'
+        :'今日已弱转强加速 → 明日只等再次超预期确认；高开过多不追、低开或午后板 → 放弃';
+    }else if(noQuote){
+      tag='行情确认中';
+    }else if(x.type==='weak_strong'){
+      if(!(op>pc*1.02)){cls='wait';tag='未高开超2% · 放弃';}
+      else if(mins>600){cls='wait';tag='已过10点 · 非快速上板';}
+      else if(!sealed){cls='hot';tag='高开成立 · 等上板';}
+      else{cls='on';tag='早盘快速上板 · 可打';}
+      act='高开>2%且10:00前封板才打；低开、高开过多不追、磨到午后 → 放弃';
+    }else{
+      if(!sealed){cls='hot';tag='等回封确认';}
+      else{cls='on';tag='回封成立 · 可打';}
+      act='开板放量后回封瞬间打板；回落不再封、或跌破当日均价 → 放弃';
+    }
+    return '<div class="dg-card '+cls+'">'
+      +'<div class="dg-h"><span class="bd">'+x.boards+'板</span><b>'+esc(x.name)+'</b><span class="cd">'+x.code+'</span>'
+      +'<span class="px">'+priceOf(x)+'</span><span class="st">'+tag+'</span></div>'
+      +'<div class="dg-buy"><span>'+esc(x.title)+'</span> · '+(isBuyDay?esc(x.entry):'下一交易日确认')+'</div>'
+      +'<div class="dg-why">'+esc(x.why)+'</div>'
+      +'<div class="dg-act">'+esc(act)+'</div>'
+      +'</div>';
+  }
+  const cards=D.leaders.length?D.leaders.map(card).join('')
+    :'<div class="pool-empty">今日无模式内买点。龙空龙：没有可出手的龙头就空仓。</div>';
+  const removed=(D.removed||[]).slice(0,8).map(x=>
+    '<div class="pc-min"><span class="nm3">'+esc(x.name||x.code)+'</span>'
+    +'<span class="mini-tag">× '+esc(x.why)+'</span></div>').join('');
+
+  box.innerHTML='<div class="pre">'
+    +'<div class="pre-h"><span class="ttl">龙空龙 · 预选池<i>只做主线总龙头</i></span>'
+    +'<span class="st">'+dtxt+'（周'+wd+'）<br>出身 → 地位 → 买点</span></div>'
+    +'<div class="pre-gate">'+gateTxt+(r.generatedAtBJ?'<span class="gen">'+r.generatedAtBJ+' 生成</span>':'')+rl+'</div>'
+    +funnel+mainHtml+cards
+    +(removed?'<div class="dg-cut"><div class="dh">淘汰（只做最强，其余不看）</div>'+removed+'</div>':'')
+    +'<div class="pre-foot">只做三件事：<b>主线内</b>、<b>板块最高板</b>、<b>模式内买点</b>。午后板按套利/跟风淘汰。仅观察，不构成投资建议。</div>'
+    +'</div>';
+  const btn=$('preRl');
+  if(btn)btn.onclick=()=>{btn.textContent='刷新中…';loadPre(true);};
+}
+
 function renderPre(){
   const box=$('preBox');if(!box)return;
   const P=S.pre||{},r=P.res;
@@ -1521,7 +1636,7 @@ function renderPre(){
   const rl='<span class="rl" id="preRl">手动刷新</span>';
   if(P.loading&&!r){
     box.innerHTML='<div class="pre"><div class="pre-h"><span class="ttl">预选池<i>LONG·KONG·LONG</i></span></div>'
-      +'<div class="pre-empty">正在按“主线→高度→一致性→主板”五级漏斗筛选中…</div></div>';
+      +'<div class="pre-empty">正在按“出身→地位→买点”筛选主线总龙头…</div></div>';
     return;
   }
   if(!r||!r.cand){
@@ -1529,6 +1644,7 @@ function renderPre(){
       +'<div class="pre-empty">预选池数据不可用（东财限流/休市），稍后自动重试。<br>刷新规则：每日 <b style="color:var(--tx2)">17:40</b> 后取当日收盘数据，此前展示上一交易日。</div></div>';
     return;
   }
+  if(r.dragon){renderDragon(box,r,rl);return;}
 
   const dt=r.date||'';
   const dtxt=dt?dt.slice(0,4)+'-'+dt.slice(4,6)+'-'+dt.slice(6,8):'--';
