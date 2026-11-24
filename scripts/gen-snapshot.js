@@ -5,8 +5,23 @@
    不带参数时按 17:40 闸门选目标交易日（17:40 前取上一交易日）。 */
 const fs = require('fs');
 const path = require('path');
-const { buildSnapshot, targetDate, bjParts, prevWd, ztPool } = require('../lib/core.js');
+const { buildSnapshot, targetDate, bjParts, prevWd, ztPool, boardRank, boardMembers } = require('../lib/core.js');
 const { buildDragonPool } = require('../lib/dragon.js');
+
+/* 机器人主线范围：东财概念板块「机器人概念/人形机器人/减速器/机器人执行器/机器视觉」
+   的成分股并集 = 主营业务涉及机器人。可用 A_SCOPE_KEYWORDS 覆盖。 */
+const SCOPE_KEYWORDS = (process.env.A_SCOPE_KEYWORDS || '机器人,人形,减速器,丝杠,伺服,执行器,机器视觉,工业自动化,智能装备').split(',');
+const SCOPE_NAME = process.env.A_SCOPE_NAME || '机器人概念';
+async function buildScopeMap() {
+  const ranks = await boardRank('m:90+t:3').catch(() => []);
+  const hit = ranks.filter(b => SCOPE_KEYWORDS.some(k => String(b.f14 || '').includes(k)));
+  if (!hit.length) return { map: {}, boards: [] };
+  const mem = await Promise.all(hit.map(b => boardMembers(b.f12).catch(() => [])));
+  const map = {};
+  // 相关概念合并成同一个主线族，避免 47 只票被拆成 5 个概念各算各的
+  hit.forEach((b, i) => (mem[i] || []).forEach(m => { map[m.f12] = SCOPE_NAME; }));
+  return { map, boards: hit.map(b => b.f14) };
+}
 
 const uniqCodes = snap => Object.keys(
   [...(snap.cand || []), ...(snap.watch || [])]
@@ -120,9 +135,20 @@ async function applyTushareRisk(snap) {
   try {
     const dates = [date, prevWd(date, 1), prevWd(date, 2), prevWd(date, 3)];
     const pools = await Promise.all(dates.map(d => ztPool(d).catch(() => [])));
-    best.dragon = buildDragonPool(pools);
+    const scope = await buildScopeMap();
+    // 把概念归属打到每只涨停票上；同时保留行业名做兜底
+    pools.forEach(pool => pool.forEach(x => {
+      x.theme = scope.map[x.c] || '';
+      x.hybk = x.hybk || '其他';
+    }));
+    best.dragon = buildDragonPool(pools, {
+      scopeMap: scope.map,
+      scopeName: scope.boards.join('/')
+    });
+    best.dragon.scopeBoards = scope.boards;
     console.log('龙空龙：', JSON.stringify(best.dragon.funnel),
       '主线', best.dragon.main && best.dragon.main.name,
+      '概念范围', scope.boards.join('/') || '无',
       '买点', best.dragon.leaders.map(x => x.name + '/' + x.type).join(',') || '无');
   } catch (e) {
     console.log('龙空龙选股失败:', e && e.message);

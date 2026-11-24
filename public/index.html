@@ -1563,7 +1563,7 @@ function renderDragon(box,r,rl){
     ?'<div class="dg-none">'+esc(D.why||'今日无合格主线，空仓等待')+'</div>'
     :'<div class="dg-main">主线 <b>'+esc(m.name)+'</b>'
       +' · 梯队：'+m.top+'板高标 / '+m.second+'只二板 / '+m.first+'只首板'+(m.zhongjun?' / 有中军':'')
-      +' · 连续 '+m.counts.join('/')+' 天'+(m.resilient?' · 分歧可修复':'')
+      +' · 近3日涨停 '+m.counts.join('/')+' 只'+(m.resilient?' · 分歧可修复':'')
       +'</div>';
 
   function priceOf(x){
