@@ -638,9 +638,10 @@ async function loadTheme(){
     ];
     renderThemes();return;
   }
-  const date=S.poolDate||S.yest.date||yest;
+  const date=String(S.poolDate||S.yest.date||yest);
   // 纯静态部署没有服务端函数：题材榜直接用当日涨停池按行业(hybk)自聚合，
   // 与 loadPre 的兜底口径完全一致（preSyncThemes），不再依赖任何远端接口。
+  // date 统一按字符串比较；盘中当日池一有炸板/回封，题材榜下一轮就跟着变。
   const zt=(date===today&&S.today.zt&&S.today.zt.length)?S.today.zt
           :((S.yest.zt&&S.yest.zt.length)?S.yest.zt:[]);
   if(!zt.length){S.themeOk=false;renderThemes();return;}
@@ -649,7 +650,8 @@ async function loadTheme(){
   if(concepts.length){
     S.themeHist.push({t:Date.now(),top1:(concepts[0]||{}).name||'',ranks:concepts.slice(0,5).map(c=>c.name),
       scores:Object.fromEntries(concepts.slice(0,8).map(c=>[c.name,c.score]))});
-    if(S.themeHist.length>40)S.themeHist.shift();
+    // 题材榜改为每轮刷新后，3s×120=6 分钟，仍能覆盖「近5分钟新进前三」窗口
+    if(S.themeHist.length>120)S.themeHist.shift();
     S.newThemes=new Set();
     const now=Date.now();const old=[...S.themeHist].reverse().find(h=>now-h.t>=5*60*1000);
     if(old)concepts.slice(0,3).forEach(c=>{if(c.name!==old.top1&&!(old.ranks||[]).includes(c.name))S.newThemes.add(c.name);});
@@ -1957,6 +1959,10 @@ function updateWatch(){
   const pr=(S.pre||{}).res;
   if(pr){
     [...(pr.cand||[]),...(pr.watch||[])].forEach(x=>{if(x&&x.code)w.add(emToTx(x.code,x.m));});
+    // 龙空龙头卡片同样要订阅实时行情。龙头常来自上一交易日的快照，
+    // 今日既不在涨停池也不在炸板池时会漏订，导致卡片永远显示昨日价格/封板状态。
+    const dl=(pr.dragon&&pr.dragon.leaders)||[];
+    dl.forEach(x=>{if(x&&x.code)w.add(emToTx(x.code,x.m));});
   }
   w.add('sh000001');w.add('sz399001');w.add('sz399006');w.add('sz399106');
   S.watch=w;
@@ -1966,7 +1972,10 @@ async function loadTodayPools(){
   // ZT/ZB 分开加载：一只失败不影响另一只
   try{
     const zt=await emPool('ZT',today);
-    S.today.zt=zt.pool.map(normStock);S.poolDate=zt.qdate||today;
+    // 东财 qdate 是数字(20261125)，today 是字符串('20261125')。
+    // 不转字符串会让 loadTheme 里 date===today 恒 false，题材榜整块回退到昨日涨停池，
+    // 盘中炸板的票（如长华集团）仍以「3板涨停」显示——必须统一为字符串。
+    S.today.zt=zt.pool.map(normStock);S.poolDate=String(zt.qdate||today);
   }catch(e){}
   try{
     const zb=await emPool('ZB',today);
@@ -2168,8 +2177,8 @@ document.querySelectorAll('.tab').forEach(t=>{
   const inSession=(h===9&&m>=25)||(h===10)||(h===11&&m<=30)||(h>=13&&h<=14)||(h===15&&m<=0)||(h===9&&m<30&&m>=25);
   S.trading=S.emOk&&inSession;
   /* ===== 统一实时心跳：盘中 3 秒 / 盘外 5 秒，一轮把「全面数据」刷一遍 =====
-     每轮固定刷新：腾讯现价 + 东财涨停/炸板/跌停池 + 涨跌家数（都是打板决策相关）；
-     题材榜 / 大盘MA20 / 同花顺指数按 3 轮错峰（各 9 秒内必更新一次），
+     每轮固定刷新：腾讯现价 + 东财涨停/炸板/跌停池 + 涨跌家数 + 题材榜（本地聚合，零请求）；
+     大盘MA20 / 同花顺指数两路错峰（各 6 秒内必更新一次），
      避免同一瞬间把上游接口打满。rtBusy 保证一轮没跑完不叠加下一轮。 */
   (async function rtHeartbeat(){
     while(true){
@@ -2182,9 +2191,11 @@ document.querySelectorAll('.tab').forEach(t=>{
         await tickTx();
         await loadTodayPools();
         await loadBreadth();
-        const k=S.rtSeq++%3;
-        if(k===0)await loadTheme();
-        else if(k===1)loadIdx();
+        // 题材榜是本地涨停池聚合，不发网络请求 → 每轮都算，炸板/回封 3 秒内可见。
+        // 只有真正走远端的大盘 MA20 / 同花顺指数继续两路错峰，避免打满上游。
+        loadTheme();
+        const k=S.rtSeq++%2;
+        if(k===0)loadIdx();
         else loadThs();
         S.trading=S.emOk&&isSess();
         updateWatch();renderAll();
