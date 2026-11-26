@@ -9,16 +9,29 @@ const { buildSnapshot, targetDate, bjParts, prevWd, ztPool, boardRank, boardMemb
 const { buildDragonPool } = require('../lib/dragon.js');
 
 /* 机器人主线范围：东财概念板块「机器人概念/人形机器人/减速器/机器人执行器/机器视觉」
-   的成分股并集 = 主营业务涉及机器人。可用 A_SCOPE_KEYWORDS 覆盖。 */
+   的成分股并集 = 主营业务涉及机器人。可用 A_SCOPE_KEYWORDS 覆盖。
+
+   【重要修复 2026-11-26】不能只从 boardRank('m:90+t:3') 涨幅榜前 100 里按关键词找板块：
+   机器人退潮时这些板块跌出前 100，映射会退化成只剩「虚拟机器人」16 只，
+   主线被误判为「无」，预选池凭空变空。改用【固定板块代码】直接取成分股，
+   与当日涨跌无关；boardRank 仅用于补充发现新板块。 */
 const SCOPE_KEYWORDS = (process.env.A_SCOPE_KEYWORDS || '机器人,人形,减速器,丝杠,伺服,执行器,机器视觉,工业自动化,智能装备').split(',');
 const SCOPE_NAME = process.env.A_SCOPE_NAME || '机器人概念';
+// 固定板块代码：机器人主线族的核心成分来源（退潮期也稳定可取）
+const SCOPE_BOARDS = (process.env.A_SCOPE_BOARDS ||
+  'BK1100:减速器,BK1145:机器人执行器,BK1184:人形机器人,BK1090:机器人概念,BK0998:机器视觉,BK1190:虚拟机器人')
+  .split(',').map(s => { const [code, name] = s.split(':'); return { f12: code, f14: name }; });
 async function buildScopeMap() {
+  // 固定板块为主（不受涨幅榜波动影响）
+  let hit = SCOPE_BOARDS.slice();
+  const seen = new Set(hit.map(b => b.f12));
+  // 补充：从涨幅榜前 100 里发现关键词命中的新板块（不重复）
   const ranks = await boardRank('m:90+t:3').catch(() => []);
-  const hit = ranks.filter(b => SCOPE_KEYWORDS.some(k => String(b.f14 || '').includes(k)));
-  if (!hit.length) return { map: {}, boards: [] };
+  ranks.filter(b => SCOPE_KEYWORDS.some(k => String(b.f14 || '').includes(k)))
+    .forEach(b => { if (!seen.has(b.f12)) { seen.add(b.f12); hit.push(b); } });
   const mem = await Promise.all(hit.map(b => boardMembers(b.f12).catch(() => [])));
   const map = {};
-  // 相关概念合并成同一个主线族，避免 47 只票被拆成 5 个概念各算各的
+  // 相关概念合并成同一个主线族，避免票被拆成多个概念各算各的
   hit.forEach((b, i) => (mem[i] || []).forEach(m => { map[m.f12] = SCOPE_NAME; }));
   return { map, boards: hit.map(b => b.f14) };
 }
