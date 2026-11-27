@@ -180,7 +180,15 @@ async function applyTushareRisk(snap) {
   fs.writeFileSync(out, JSON.stringify(best));
   console.log('写入', out, fs.statSync(out).size, 'bytes');
 
-  // 数据质量守门：一条预警都算不出来，说明上游挂了，别把坏快照提交上线
-  const bad = all.length === 0 || all.filter(x => x && x.alert).length === 0;
-  if (bad) { console.error('FAIL: 快照无任何预警价位，判定为上游异常，退出码 1 不提交'); process.exit(1); }
+  /* 数据质量守门：
+     旧逻辑(cand/watch)与龙空龙(dragon)是两套独立口径——普涨日旧口径可能判无主线、
+     cand/watch 为空，但 dragon 仍能正常选出主线与买点。只要任一路径产出有效结果，
+     就说明上游数据到手，不能误判为异常拒绝发布（否则线上一直卡在昨日快照）。 */
+  const oldOk = all.length > 0 && all.filter(x => x && x.alert).length > 0;
+  const dragonOk = !!(best.dragon && best.dragon.ok && best.dragon.funnel && best.dragon.funnel.zt > 0);
+  if (!oldOk && !dragonOk) {
+    console.error('FAIL: 旧池与龙空龙均无有效结果，判定为上游异常，退出码 1 不提交');
+    process.exit(1);
+  }
+  if (!oldOk) console.log('守门提示: 旧口径无候选，但龙空龙结果有效，允许发布');
 })().catch(e => { console.error('FAIL', e && e.message); process.exit(1); });
