@@ -13,15 +13,15 @@ const { buildDragonPool } = require('../lib/dragon.js');
    改为【按板块名称关键词动态发现】：翻页取全部东财概念板块(~500)，
    用族关键词匹配板块名，归并成若干题材族，每族取全量成分股（boardMembers 已支持分页）。
    一只票可同时属于多个族。族关键词可用环境变量 A_TOPIC_DEFS 覆盖。 */
+/* 【2026-11-27 用户口径收紧】主线只认这四个科技方向：芯片/算力光通信/PCB/机器人。
+   军工、消费、泛AI、新能源车等一律不算主线——即便当日涨停多也不进池。
+   再从中按【今日涨停数前三强】取主线（TOP_N=3）。 */
+const TOP_N = +(process.env.A_TOP_N || 3);
 const TOPIC_DEFS = {
-  '半导体芯片': ['半导体', '芯片', '光刻', '存储', 'MCU'],
-  '算力光模块': ['算力', 'CPO', '光模块', '光通信', '液冷', '通信技术', '智算'],
-  '人工智能': ['人工智能', 'AI', 'AIGC', '多模态', '智谱', '语料', '智能体'],
-  '机器人概念': ['机器人', '人形', '减速器', '伺服', '执行器', '机器视觉', '虚拟机器人'],
-  '新能源车': ['新能源车', '锂电', '固态电池', '智能驾驶', '汽车芯片'],
-  '军工航天': ['军工', '航天', '航空', '商业航天', '国防'],
-  '医药生物': ['医药', '创新药', '中药', '生物', '疫苗', '合成生物'],
-  '消费零售': ['消费', '零售', '白酒', '食品', '文娱']
+  '芯片半导体': ['半导体', '芯片', '光刻', '存储', 'MCU'],
+  '算力光通信': ['算力', 'CPO', '光模块', '光通信', '液冷', '智算'],
+  'PCB': ['PCB'],
+  '机器人': ['机器人', '人形', '减速器', '伺服', '执行器', '机器视觉']
 };
 async function buildScopeGroups() {
   // 1) 翻页取全部概念板块名
@@ -165,10 +165,10 @@ async function applyTushareRisk(snap) {
       x.theme = theme;
       x.hybk = x.hybk || '其他';
     }));
-    best.dragon = buildDragonPool(pools, { scopeGroups: scope.groups });
+    best.dragon = buildDragonPool(pools, { scopeGroups: scope.groups, topN: TOP_N });
     best.dragon.topicGroups = scope.names;
     console.log('龙空龙：', JSON.stringify(best.dragon.funnel),
-      '主线', (best.dragon.mains || []).map(m => m.name + '(' + m.stocks + ')').join('/') || '无',
+      '主线(前三强)', (best.dragon.mains || []).map(m => m.name + '(' + m.stocks + ')').join('/') || '无',
       '题材族', scope.names.join(' ') || '无',
       '买点', best.dragon.leaders.map(x => x.name + '/' + x.type + '@' + x.main).join(',') || '无');
   } catch (e) {
