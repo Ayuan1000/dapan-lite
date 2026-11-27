@@ -120,6 +120,9 @@ header{position:sticky;top:0;z-index:50;background:linear-gradient(180deg,rgba(1
 .dg-main b{color:var(--blue)}
 .dg-topic{font-size:9px;font-weight:700;color:var(--amber);background:rgba(199,124,10,.12);border:1px solid rgba(199,124,10,.3);padding:1px 6px;border-radius:4px}
 .dg-none{padding:12px;font-size:11px;color:var(--tx3);text-align:center}
+.dg-pool-h{margin:9px 10px 2px;padding:6px 9px;border-radius:7px;font-size:11px;font-weight:800;background:rgba(199,124,10,.12);color:var(--amber);border-left:3px solid var(--amber)}
+.dg-pool-h.p2{background:rgba(43,108,176,.12);color:var(--blue);border-left-color:var(--blue)}
+.dg-pool-h small{font-weight:400;color:var(--tx3);margin-left:6px;font-size:9.5px}
 .dg-card{margin:8px 10px;padding:9px 10px;border-radius:9px;border:1px solid rgba(255,255,255,.07);background:var(--card2)}
 .dg-card.on{border-color:rgba(45,212,120,.55)}
 .dg-card.hot{border-color:rgba(255,193,92,.5)}
@@ -1559,7 +1562,7 @@ function renderDragon(box,r,rl){
   const funnel='<div class="dg-funnel">'
     +'<div><b>'+(fn.zt||0)+'</b><span>全市场涨停</span></div><i>→</i>'
     +'<div><b>'+(fn.main||0)+'</b><span>主线内</span></div><i>→</i>'
-    +'<div class="final"><b>'+(fn.leader||0)+'</b><span>总龙头买点</span></div>'
+    +'<div class="final"><b>'+(fn.leader||0)+'</b><span>入池标的</span></div>'
     +'</div>';
 
   const m=D.main;
@@ -1592,23 +1595,21 @@ function renderDragon(box,r,rl){
     const mins=hm.getHours()*60+hm.getMinutes();
     const noQuote=!q.price;
     let cls='wait',tag='行情确认中',act='';
-    if(!isBuyDay){
-      cls='hot';tag='下一交易日盯盘';
-      act=x.type==='first_div'
-        ?'今日首次分歧回封 → 明日只等「超预期高开 + 早盘快速上板」；低开/磨到午后/冲高回落 → 放弃'
-        :'今日已弱转强加速 → 明日只等再次超预期确认；高开过多不追、低开或午后板 → 放弃';
+    if(x.type==='consistent'){
+      // 池②：今日一致、未分歧，只看不买，等未来首次分歧
+      cls='wait';tag='只看不买 · 等首次分歧';
+      act='今日一致锁筹，尚无首次分歧；等未来开板放量回封那一刻才出手，今日不买';
+    }else if(!isBuyDay){
+      // 池①：今日首次分歧回封，收盘后入池，明日等弱转强
+      cls='hot';tag='明日盯弱转强';
+      act='今日首次分歧回封 → 明日只等「超预期高开 + 早盘快速上板」；低开/磨到午后/冲高回落 → 不要买';
     }else if(noQuote){
       tag='行情确认中';
-    }else if(x.type==='weak_strong'){
-      if(!(op>pc*1.02)){cls='wait';tag='未高开超2% · 放弃';}
-      else if(mins>600){cls='wait';tag='已过10点 · 非快速上板';}
-      else if(!sealed){cls='hot';tag='高开成立 · 等上板';}
-      else{cls='on';tag='早盘快速上板 · 可打';}
-      act='高开>2%且10:00前封板才打；低开、高开过多不追、磨到午后 → 放弃';
     }else{
+      // 池①盘中：等回封确认
       if(!sealed){cls='hot';tag='等回封确认';}
       else{cls='on';tag='回封成立 · 可打';}
-      act='开板放量后回封瞬间打板；回落不再封、或跌破当日均价 → 放弃';
+      act='首次开板放量后回封瞬间打板；回落不再封、或跌破当日均价 → 不要买';
     }
     return '<div class="dg-card '+cls+'">'
       +'<div class="dg-h"><span class="bd">'+x.boards+'板</span><b>'+esc(x.name)+'</b><span class="cd">'+x.code+'</span>'
@@ -1619,8 +1620,11 @@ function renderDragon(box,r,rl){
       +'<div class="dg-act">'+esc(act)+'</div>'
       +'</div>';
   }
-  const cards=D.leaders.length?D.leaders.map(card).join('')
-    :'<div class="pool-empty">今日无模式内买点。龙空龙：没有可出手的龙头就空仓。</div>';
+  const p1=D.pool1||[],p2=D.pool2||[];
+  const cards=(p1.length||p2.length)
+    ?(p1.length?'<div class="dg-pool-h">① 首次分歧转一致 · 等明日弱转强<small>今日回封瞬间为买点，收盘后入池盯明日</small></div>'+p1.map(card).join(''):'')
+      +(p2.length?'<div class="dg-pool-h p2">② 一致未分歧 · 等首次分歧<small>≥2板今日一致，只看不买</small></div>'+p2.map(card).join(''):'')
+    :'<div class="pool-empty">今日两池均无标的。龙空龙：没有符合的就空仓。</div>';
   const removed=(D.removed||[]).slice(0,8).map(x=>
     '<div class="pc-min"><span class="nm3">'+esc(x.name||x.code)+'</span>'
     +'<span class="mini-tag">× '+esc(x.why)+'</span></div>').join('');
@@ -1631,7 +1635,7 @@ function renderDragon(box,r,rl){
     +'<div class="pre-gate">'+gateTxt+(r.generatedAtBJ?'<span class="gen">'+r.generatedAtBJ+' 生成</span>':'')+rl+'</div>'
     +funnel+mainHtml+cards
     +(removed?'<div class="dg-cut"><div class="dh">淘汰（只做最强，其余不看）</div>'+removed+'</div>':'')
-    +'<div class="pre-foot">只做三件事：<b>主线内</b>、<b>板块最高板</b>、<b>模式内买点</b>。午后板按套利/跟风淘汰。仅观察，不构成投资建议。</div>'
+    +'<div class="pre-foot">范围：<b>主线内</b> + <b>主板</b> + <b>连板≥2</b> + <b>早盘封板</b>。①首次分歧回封→明日弱转强；②一致未分歧→等首次分歧，今日只看不买。已分歧过的票一律剔除。仅观察，不构成投资建议。</div>'
     +'</div>';
   const btn=$('preRl');
   if(btn)btn.onclick=()=>{btn.textContent='刷新中…';loadPre(true);};
