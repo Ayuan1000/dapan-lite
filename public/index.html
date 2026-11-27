@@ -116,7 +116,9 @@ header{position:sticky;top:0;z-index:50;background:linear-gradient(180deg,rgba(1
 .dg-funnel span{font-size:9.5px;color:var(--tx3)}
 .dg-funnel i{font-style:normal;color:var(--tx3);font-size:12px}
 .dg-main{padding:7px 12px;font-size:10.5px;color:var(--tx2);border-bottom:1px solid rgba(255,255,255,.05);line-height:1.6}
+.dg-main.sub{color:var(--tx3);font-size:10px}
 .dg-main b{color:var(--blue)}
+.dg-topic{font-size:9px;font-weight:700;color:var(--amber);background:rgba(199,124,10,.12);border:1px solid rgba(199,124,10,.3);padding:1px 6px;border-radius:4px}
 .dg-none{padding:12px;font-size:11px;color:var(--tx3);text-align:center}
 .dg-card{margin:8px 10px;padding:9px 10px;border-radius:9px;border:1px solid rgba(255,255,255,.07);background:var(--card2)}
 .dg-card.on{border-color:rgba(45,212,120,.55)}
@@ -1561,12 +1563,15 @@ function renderDragon(box,r,rl){
     +'</div>';
 
   const m=D.main;
-  const mainHtml=!m
+  /* 多主线：所有达标题材各列一行；单主线时退回原样式 */
+  const mains=D.mains&&D.mains.length?D.mains:(m?[D.main]:[]);
+  const mainHtml=!mains.length
     ?'<div class="dg-none">'+esc(D.why||'今日无合格主线，空仓等待')+'</div>'
-    :'<div class="dg-main">主线 <b>'+esc(m.name)+'</b>'
-      +' · 梯队：'+m.top+'板高标 / '+m.second+'只二板 / '+m.first+'只首板'+(m.zhongjun?' / 有中军':'')
-      +' · 近3日涨停 '+m.counts.join('/')+' 只'+(m.resilient?' · 分歧可修复':'')
-      +'</div>';
+    :mains.map((x,i)=>'<div class="dg-main'+(i?' sub':'')+'">'+(mains.length>1?'主线'+(i+1)+' ':'主线 ')
+      +'<b>'+esc(x.name)+'</b>'
+      +' · 梯队：'+x.top+'板高标 / '+(x.second||0)+'只二板 / '+x.first+'只首板'+(x.zhongjun?' / 有中军':'')
+      +' · 近3日涨停 '+(x.counts||[]).join('/')+' 只'+(x.resilient?' · 分歧可修复':'')
+      +'</div>').join('');
 
   function priceOf(x){
     const q=S.quotes[emToTx(x.code,x.m)];
@@ -1607,6 +1612,7 @@ function renderDragon(box,r,rl){
     }
     return '<div class="dg-card '+cls+'">'
       +'<div class="dg-h"><span class="bd">'+x.boards+'板</span><b>'+esc(x.name)+'</b><span class="cd">'+x.code+'</span>'
+      +(x.main?'<span class="dg-topic">'+esc(x.main)+'</span>':'')
       +'<span class="px">'+priceOf(x)+'</span><span class="st">'+tag+'</span></div>'
       +'<div class="dg-buy"><span>'+esc(x.title)+'</span> · '+(isBuyDay?esc(x.entry):'下一交易日确认')+'</div>'
       +'<div class="dg-why">'+esc(x.why)+'</div>'

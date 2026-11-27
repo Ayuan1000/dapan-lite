@@ -5,35 +5,44 @@
    不带参数时按 17:40 闸门选目标交易日（17:40 前取上一交易日）。 */
 const fs = require('fs');
 const path = require('path');
-const { buildSnapshot, targetDate, bjParts, prevWd, ztPool, boardRank, boardMembers } = require('../lib/core.js');
+const { buildSnapshot, targetDate, bjParts, prevWd, ztPool, boardRank, boardMembers, jgetR } = require('../lib/core.js');
 const { buildDragonPool } = require('../lib/dragon.js');
 
-/* 机器人主线范围：东财概念板块「机器人概念/人形机器人/减速器/机器人执行器/机器视觉」
-   的成分股并集 = 主营业务涉及机器人。可用 A_SCOPE_KEYWORDS 覆盖。
-
-   【重要修复 2026-11-26】不能只从 boardRank('m:90+t:3') 涨幅榜前 100 里按关键词找板块：
-   机器人退潮时这些板块跌出前 100，映射会退化成只剩「虚拟机器人」16 只，
-   主线被误判为「无」，预选池凭空变空。改用【固定板块代码】直接取成分股，
-   与当日涨跌无关；boardRank 仅用于补充发现新板块。 */
-const SCOPE_KEYWORDS = (process.env.A_SCOPE_KEYWORDS || '机器人,人形,减速器,丝杠,伺服,执行器,机器视觉,工业自动化,智能装备').split(',');
-const SCOPE_NAME = process.env.A_SCOPE_NAME || '机器人概念';
-// 固定板块代码：机器人主线族的核心成分来源（退潮期也稳定可取）
-const SCOPE_BOARDS = (process.env.A_SCOPE_BOARDS ||
-  'BK1100:减速器,BK1145:机器人执行器,BK1184:人形机器人,BK1090:机器人概念,BK0998:机器视觉,BK1190:虚拟机器人')
-  .split(',').map(s => { const [code, name] = s.split(':'); return { f12: code, f14: name }; });
-async function buildScopeMap() {
-  // 固定板块为主（不受涨幅榜波动影响）
-  let hit = SCOPE_BOARDS.slice();
-  const seen = new Set(hit.map(b => b.f12));
-  // 补充：从涨幅榜前 100 里发现关键词命中的新板块（不重复）
-  const ranks = await boardRank('m:90+t:3').catch(() => []);
-  ranks.filter(b => SCOPE_KEYWORDS.some(k => String(b.f14 || '').includes(k)))
-    .forEach(b => { if (!seen.has(b.f12)) { seen.add(b.f12); hit.push(b); } });
-  const mem = await Promise.all(hit.map(b => boardMembers(b.f12).catch(() => [])));
-  const map = {};
-  // 相关概念合并成同一个主线族，避免票被拆成多个概念各算各的
-  hit.forEach((b, i) => (mem[i] || []).forEach(m => { map[m.f12] = SCOPE_NAME; }));
-  return { map, boards: hit.map(b => b.f14) };
+/* 全市场题材族映射（2026-11-27 重构）：
+   不再写死「机器人」单一主线，也不硬编码板块代码（实测代码会失效/归错类）。
+   改为【按板块名称关键词动态发现】：翻页取全部东财概念板块(~500)，
+   用族关键词匹配板块名，归并成若干题材族，每族取全量成分股（boardMembers 已支持分页）。
+   一只票可同时属于多个族。族关键词可用环境变量 A_TOPIC_DEFS 覆盖。 */
+const TOPIC_DEFS = {
+  '半导体芯片': ['半导体', '芯片', '光刻', '存储', 'MCU'],
+  '算力光模块': ['算力', 'CPO', '光模块', '光通信', '液冷', '通信技术', '智算'],
+  '人工智能': ['人工智能', 'AI', 'AIGC', '多模态', '智谱', '语料', '智能体'],
+  '机器人概念': ['机器人', '人形', '减速器', '伺服', '执行器', '机器视觉', '虚拟机器人'],
+  '新能源车': ['新能源车', '锂电', '固态电池', '智能驾驶', '汽车芯片'],
+  '军工航天': ['军工', '航天', '航空', '商业航天', '国防'],
+  '医药生物': ['医药', '创新药', '中药', '生物', '疫苗', '合成生物'],
+  '消费零售': ['消费', '零售', '白酒', '食品', '文娱']
+};
+async function buildScopeGroups() {
+  // 1) 翻页取全部概念板块名
+  const bmap = {};
+  for (let pn = 1; pn <= 8; pn++) {
+    const d = await jgetR(`https://push2.eastmoney.com/api/qt/clist/get?pn=${pn}&pz=100&po=1&np=1&fltt=2&invt=2&fid=f12&fs=m:90+t:3&fields=f12,f14`, 15000, 3).catch(() => ({}));
+    const diff = (d.data && d.data.diff) || [];
+    diff.forEach(b => { bmap[b.f12] = b.f14; });
+    if (diff.length < 100) break;
+  }
+  // 2) 按族关键词归类板块代码
+  const groups = {}, names = [];
+  for (const [name, kws] of Object.entries(TOPIC_DEFS)) {
+    const bks = Object.keys(bmap).filter(code => kws.some(k => String(bmap[code]).includes(k)));
+    if (!bks.length) continue;
+    const mem = await Promise.all(bks.map(b => boardMembers(b).catch(() => [])));
+    const set = {};
+    bks.forEach((b, i) => (mem[i] || []).forEach(m => { set[m.f12] = true; }));
+    if (Object.keys(set).length) { groups[name] = set; names.push(name + '(' + Object.keys(set).length + ')'); }
+  }
+  return { groups, names };
 }
 
 const uniqCodes = snap => Object.keys(
@@ -148,21 +157,20 @@ async function applyTushareRisk(snap) {
   try {
     const dates = [date, prevWd(date, 1), prevWd(date, 2), prevWd(date, 3)];
     const pools = await Promise.all(dates.map(d => ztPool(d).catch(() => [])));
-    const scope = await buildScopeMap();
-    // 把概念归属打到每只涨停票上；同时保留行业名做兜底
+    const scope = await buildScopeGroups();
+    // 把题材归属打到每只涨停票上（第一族）；同时保留行业名做兜底
     pools.forEach(pool => pool.forEach(x => {
-      x.theme = scope.map[x.c] || '';
+      let theme = '';
+      Object.keys(scope.groups).forEach(g => { if (!theme && scope.groups[g][x.c]) theme = g; });
+      x.theme = theme;
       x.hybk = x.hybk || '其他';
     }));
-    best.dragon = buildDragonPool(pools, {
-      scopeMap: scope.map,
-      scopeName: scope.boards.join('/')
-    });
-    best.dragon.scopeBoards = scope.boards;
+    best.dragon = buildDragonPool(pools, { scopeGroups: scope.groups });
+    best.dragon.topicGroups = scope.names;
     console.log('龙空龙：', JSON.stringify(best.dragon.funnel),
-      '主线', best.dragon.main && best.dragon.main.name,
-      '概念范围', scope.boards.join('/') || '无',
-      '买点', best.dragon.leaders.map(x => x.name + '/' + x.type).join(',') || '无');
+      '主线', (best.dragon.mains || []).map(m => m.name + '(' + m.stocks + ')').join('/') || '无',
+      '题材族', scope.names.join(' ') || '无',
+      '买点', best.dragon.leaders.map(x => x.name + '/' + x.type + '@' + x.main).join(',') || '无');
   } catch (e) {
     console.log('龙空龙选股失败:', e && e.message);
     best.dragon = { ok: false, why: '数据不足', main: null, leaders: [], removed: [], funnel: { zt: 0, main: 0, leader: 0 } };
